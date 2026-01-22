@@ -62,6 +62,14 @@ All multi-byte fields are **big-endian** (network byte order). The header is fix
 | `kPayloadAudio` | `0x02` | Encoded audio data. |
 | `kPayloadControl` | `0x03` | Control or session metadata. |
 
+## H.264 payload format
+
+The host emits H.264 frames as **Annex B** byte streams. Each payload contains
+start-code delimited NAL units (e.g., `00 00 00 01` prefixes). Clients should
+parse the payload as Annex B and must not expect length-prefixed NALs or
+container headers. SPS/PPS data may arrive either inline with keyframes or via
+separate config packets, but it will always be in Annex B format.
+
 ## MTU guidance
 
 We reserve space for the 24-byte header and target a safe UDP payload size that avoids
