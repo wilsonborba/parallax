@@ -87,10 +87,33 @@ struct VaapiEncoder {
     hw_frame: ffmpeg_next::util::frame::video::Video,
 }
 
+impl std::fmt::Debug for VaapiEncoder {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("VaapiEncoder")
+            .field("encoder", &"<ffmpeg encoder>")
+            .field("scaler", &"<ffmpeg scaler>")
+            .field("sw_frame", &"<ffmpeg software frame>")
+            .field("hw_frame", &"<ffmpeg hardware frame>")
+            .finish()
+    }
+}
+
 struct SoftwareEncoder {
     encoder: ffmpeg_next::codec::encoder::video::Video,
     scaler: ffmpeg_next::software::scaling::Context,
     sw_frame: ffmpeg_next::util::frame::video::Video,
+}
+
+impl std::fmt::Debug for SoftwareEncoder {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("SoftwareEncoder")
+            .field("encoder", &"<ffmpeg encoder>")
+            .field("scaler", &"<ffmpeg scaler>")
+            .field("sw_frame", &"<ffmpeg software frame>")
+            .finish()
+    }
 }
 
 pub fn init(config: H264Config) -> Result<H264Encoder, String> {
