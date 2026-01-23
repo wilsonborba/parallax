@@ -8,6 +8,8 @@
 namespace {
 constexpr std::uint16_t kDefaultUdpPort = 7777;
 constexpr int kPlaceholderFrameCount = 120;
+constexpr int kDefaultVideoWidth = 1920;
+constexpr int kDefaultVideoHeight = 1080;
 } // namespace
 
 bool OpenXRApp::Initialize() {
@@ -19,7 +21,7 @@ bool OpenXRApp::Initialize() {
         return false;
     }
 
-    if (!decoder_.Initialize()) {
+    if (!decoder_.Initialize(kDefaultVideoWidth, kDefaultVideoHeight)) {
         return false;
     }
 
@@ -47,6 +49,7 @@ void OpenXRApp::Shutdown() {
         instance_ = XR_NULL_HANDLE;
     }
 #endif
+    decoder_.Shutdown();
     running_ = false;
 }
 

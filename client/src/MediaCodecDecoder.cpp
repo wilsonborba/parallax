@@ -1,15 +1,84 @@
 #include "MediaCodecDecoder.h"
 
+#include <algorithm>
+#include <cstring>
 #include <iostream>
 
-bool MediaCodecDecoder::Initialize() {
-    std::cout << "MediaCodec decoder placeholder initialized.\n";
-    return true;
+#if defined(__ANDROID__)
+#include <android/native_window.h>
+#include <media/NdkMediaCodec.h>
+#include <media/NdkMediaFormat.h>
+#endif
+
+namespace {
+constexpr const char* kMimeTypeH264 = "video/avc";
+} // namespace
+
+MediaCodecDecoder::~MediaCodecDecoder() {
+    Shutdown();
 }
 
-void MediaCodecDecoder::SubmitPacket(const std::vector<std::uint8_t>& packet) {
-    (void)packet;
-    // Placeholder: feed packet to MediaCodec input buffers.
+bool MediaCodecDecoder::Initialize(int width, int height, ANativeWindow* output_surface) {
+    width_ = width;
+    height_ = height;
+    output_surface_ = output_surface;
+    use_surface_output_ = output_surface_ != nullptr;
+    stride_ = width_;
+    slice_height_ = height_;
+
+#if defined(__ANDROID__)
+    if (width_ <= 0 || height_ <= 0) {
+        std::cerr << "MediaCodec decoder requires a valid frame size.\n";
+        return false;
+    }
+
+    codec_ = AMediaCodec_createDecoderByType(kMimeTypeH264);
+    if (!codec_) {
+        std::cerr << "Failed to create MediaCodec decoder for H.264.\n";
+        return false;
+    }
+
+    AMediaFormat* format = AMediaFormat_new();
+    AMediaFormat_setString(format, AMEDIAFORMAT_KEY_MIME, kMimeTypeH264);
+    AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_WIDTH, width_);
+    AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_HEIGHT, height_);
+    if (!use_surface_output_) {
+        AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_COLOR_FORMAT, COLOR_FormatYUV420Flexible);
+    }
+
+    media_status_t status = AMediaCodec_configure(codec_, format, output_surface_, nullptr, 0);
+    AMediaFormat_delete(format);
+    if (status != AMEDIA_OK) {
+        std::cerr << "Failed to configure MediaCodec decoder.\n";
+        AMediaCodec_delete(codec_);
+        codec_ = nullptr;
+        return false;
+    }
+
+    status = AMediaCodec_start(codec_);
+    if (status != AMEDIA_OK) {
+        std::cerr << "Failed to start MediaCodec decoder.\n";
+        AMediaCodec_delete(codec_);
+        codec_ = nullptr;
+        return false;
+    }
+
+    std::cout << "MediaCodec decoder initialized for H.264 (" << width_ << "x" << height_ << ").\n";
+    return true;
+#else
+    std::cout << "MediaCodec decoder placeholder initialized.\n";
+    return true;
+#endif
+}
+
+void MediaCodecDecoder::SubmitPacket(const std::vector<std::uint8_t>& packet, int64_t presentation_time_us,
+                                     bool end_of_stream) {
+    if (packet.empty() && !end_of_stream) {
+        return;
+    }
+
+    pending_packets_.push_back(PendingPacket{packet, presentation_time_us, end_of_stream});
+    FeedInputBuffers();
 }
 
 bool MediaCodecDecoder::DecodeNextFrame() {
