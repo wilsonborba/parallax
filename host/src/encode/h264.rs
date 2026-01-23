@@ -187,11 +187,11 @@ fn init_vaapi_encoder(raw_frame: &RawFrame) -> Result<VaapiEncoder, String> {
 
     let scaler = ffmpeg_next::software::scaling::Context::get(
         input_format,
-        raw_frame.width as i32,
-        raw_frame.height as i32,
+        raw_frame.width,
+        raw_frame.height,
         ffmpeg_next::format::Pixel::NV12,
-        raw_frame.width as i32,
-        raw_frame.height as i32,
+        raw_frame.width,
+        raw_frame.height,
         ffmpeg_next::software::scaling::flag::Flags::BILINEAR,
     )
     .map_err(|error| format!("VAAPI scaler: {error}"))?;
@@ -237,11 +237,11 @@ fn init_software_encoder(raw_frame: &RawFrame) -> Result<SoftwareEncoder, String
 
     let scaler = ffmpeg_next::software::scaling::Context::get(
         input_format,
-        raw_frame.width as i32,
-        raw_frame.height as i32,
+        raw_frame.width,
+        raw_frame.height,
         ffmpeg_next::format::Pixel::YUV420P,
-        raw_frame.width as i32,
-        raw_frame.height as i32,
+        raw_frame.width,
+        raw_frame.height,
         ffmpeg_next::software::scaling::flag::Flags::BILINEAR,
     )
     .map_err(|error| format!("x264 scaler: {error}"))?;
