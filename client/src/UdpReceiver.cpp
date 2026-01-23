@@ -1,6 +1,6 @@
 #include "UdpReceiver.h"
 
-#include "proto/udp_packet.h"
+#include "udp_packet.h"
 
 #include <array>
 #include <cerrno>
@@ -121,7 +121,9 @@ std::vector<std::uint8_t> UdpReceiver::ReceivePacket() {
 
         const auto now = std::chrono::steady_clock::now();
         for (auto it = frames_.begin(); it != frames_.end();) {
-            if (now - it->second.first_packet_time > kFrameAssemblyTimeoutMs) {
+            const FrameAssembly& frame = it->second;
+            if (frame.received_packets > 0 && frame.received_packets < frame.packet_count &&
+                now - frame.first_packet_time > kFrameAssemblyTimeoutMs) {
                 it = frames_.erase(it);
             } else {
                 ++it;
