@@ -1,6 +1,6 @@
 #include "UdpReceiver.h"
 
-#include "proto/udp_packet.h"
+#include "udp_packet.h"
 
 #include <array>
 #include <cerrno>
