@@ -129,6 +129,12 @@ pub fn encode_frame(encoder: &mut H264Encoder, raw_frame: &RawFrame) -> Result<E
     }
 }
 
+impl H264Encoder {
+    pub fn encode_frame(&mut self, raw_frame: &RawFrame) -> Result<EncodedFrame, String> {
+        encode_frame(self, raw_frame)
+    }
+}
+
 fn init_vaapi() -> Result<H264Encoder, String> {
     let device = ffmpeg_next::hardware::Device::create(
         ffmpeg_next::hardware::Type::VAAPI,

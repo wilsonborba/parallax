@@ -131,6 +131,10 @@ impl X11Capture {
         }
     }
 
+    pub fn next_frame(&mut self) -> Result<(Vec<u8>, u32, u32), String> {
+        self.capture_frame()
+    }
+
     fn init_shm(&mut self) -> Result<(), String> {
         let screen = unsafe { xlib::XDefaultScreen(self.display) };
         let visual = unsafe { xlib::XDefaultVisual(self.display, screen) };

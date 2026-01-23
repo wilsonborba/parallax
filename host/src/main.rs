@@ -117,5 +117,49 @@ fn main() {
         "Pipeline ready: capture={:?}, encoder={:?}, stream={:?}",
         capture, encoder, streamer
     );
-    println!("Streaming loop not implemented yet.");
+
+    let mut capture = capture;
+    let mut encoder = encoder;
+    let mut streamer = streamer;
+    let mut frame_counter: u64 = 0;
+    let mut packet_counter: u64 = 0;
+
+    loop {
+        let (pixels, width, height) = match capture.next_frame() {
+            Ok(frame) => frame,
+            Err(error) => {
+                eprintln!("Capture error: {error}");
+                continue;
+            }
+        };
+        let raw_frame = encode::h264::RawFrame::new(
+            pixels,
+            width,
+            height,
+            encode::h264::RawPixelFormat::Bgra,
+        );
+        let encoded_frame = match encoder.encode_frame(&raw_frame) {
+            Ok(frame) => frame,
+            Err(error) => {
+                eprintln!("Encode error: {error}");
+                continue;
+            }
+        };
+        let packets = net::packetize_frame(&encoded_frame);
+        for packet in &packets {
+            if let Err(error) = streamer.send_packet(packet) {
+                eprintln!("UDP send error: {error}");
+                break;
+            }
+        }
+
+        frame_counter += 1;
+        packet_counter += packets.len() as u64;
+
+        if frame_counter % 60 == 0 {
+            println!(
+                "Streaming progress: frames_sent={frame_counter}, packets_sent={packet_counter}"
+            );
+        }
+    }
 }
