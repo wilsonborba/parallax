@@ -86,12 +86,14 @@ impl X11Capture {
             return Err("X11 display connection is not available".to_string());
         }
 
+        let all_planes = u32::try_from(xlib::XAllPlanes())
+            .map_err(|_| "XAllPlanes value does not fit into u32".to_string())?;
+
         if self.use_xshm {
             let shm = self
                 .shm
                 .as_ref()
                 .ok_or_else(|| "XShm state missing while XShm is enabled".to_string())?;
-            let all_planes = xlib::XAllPlanes();
             let status = unsafe {
                 xshm::XShmGetImage(
                     self.display,
@@ -108,7 +110,6 @@ impl X11Capture {
             }
             unsafe { self.copy_image(shm.image) }
         } else {
-            let all_planes = xlib::XAllPlanes();
             let image = unsafe {
                 xlib::XGetImage(
                     self.display,
