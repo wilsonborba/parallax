@@ -2,6 +2,7 @@ use std::env;
 
 mod capture;
 mod encode;
+mod net;
 mod stream;
 
 #[derive(Debug)]
