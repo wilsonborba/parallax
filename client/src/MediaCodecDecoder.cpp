@@ -33,8 +33,11 @@ bool MediaCodecDecoder::Initialize(const MediaCodecInitParams& params) {
     use_test_pattern_ = true;
 
 #if defined(__ANDROID__)
-    output_surface_ = static_cast<ANativeWindow*>(params.output_surface);
-    use_surface_output_ = output_surface_ != nullptr;
+    if (params.output_surface != nullptr) {
+        std::cout << "MediaCodec decoder: output surface provided but CPU YUV output is selected.\n";
+    }
+    output_surface_ = nullptr;
+    use_surface_output_ = false;
     stride_ = width_;
     slice_height_ = height_;
     if (width_ <= 0 || height_ <= 0) {
@@ -61,9 +64,7 @@ bool MediaCodecDecoder::Initialize(const MediaCodecInitParams& params) {
     if (pps_ && !pps_->empty()) {
         AMediaFormat_setBuffer(format, "csd-1", pps_->data(), pps_->size());
     }
-    if (!use_surface_output_) {
-        AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_COLOR_FORMAT, COLOR_FormatYUV420Flexible);
-    }
+    AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_COLOR_FORMAT, COLOR_FormatYUV420Flexible);
 
     media_status_t status = AMediaCodec_configure(codec_, format, output_surface_, nullptr, 0);
     AMediaFormat_delete(format);
@@ -144,12 +145,16 @@ bool MediaCodecDecoder::GenerateTestPatternFrame() {
     DecodedFrame frame;
     frame.width = kFrameWidth;
     frame.height = kFrameHeight;
+    frame.y_stride = kFrameWidth;
+    frame.uv_stride = kFrameWidth / 2;
+    frame.y_plane_height = kFrameHeight;
+    frame.uv_plane_height = kFrameHeight / 2;
     frame.frame_index = frame_counter_++;
 
-    const std::size_t luma_size = static_cast<std::size_t>(kFrameWidth * kFrameHeight);
-    const std::size_t chroma_width = kFrameWidth / 2;
-    const std::size_t chroma_height = kFrameHeight / 2;
-    const std::size_t chroma_size = static_cast<std::size_t>(chroma_width * chroma_height);
+    const std::size_t luma_size =
+        static_cast<std::size_t>(frame.y_stride) * static_cast<std::size_t>(frame.y_plane_height);
+    const std::size_t chroma_size =
+        static_cast<std::size_t>(frame.uv_stride) * static_cast<std::size_t>(frame.uv_plane_height);
 
     frame.y_plane.resize(luma_size);
     frame.u_plane.resize(chroma_size);
@@ -157,7 +162,7 @@ bool MediaCodecDecoder::GenerateTestPatternFrame() {
 
     for (int y = 0; y < kFrameHeight; ++y) {
         for (int x = 0; x < kFrameWidth; ++x) {
-            frame.y_plane[static_cast<std::size_t>(y * kFrameWidth + x)] =
+            frame.y_plane[static_cast<std::size_t>(y * frame.y_stride + x)] =
                 static_cast<std::uint8_t>((x + frame.frame_index) % 255);
         }
     }
@@ -280,29 +285,31 @@ bool MediaCodecDecoder::DrainOutputBuffers() {
                         frame.width = width_;
                         frame.height = height_;
                         frame.frame_index = frame_counter_++;
-                        frame.y_plane.resize(static_cast<std::size_t>(width_ * height_));
-                        frame.u_plane.resize(static_cast<std::size_t>((width_ / 2) * (height_ / 2)));
-                        frame.v_plane.resize(static_cast<std::size_t>((width_ / 2) * (height_ / 2)));
+                        frame.y_stride = stride;
+                        frame.uv_stride = static_cast<int>(chroma_stride);
+                        frame.y_plane_height = slice_height;
+                        frame.uv_plane_height = static_cast<int>(chroma_height);
+                        frame.y_plane.resize(y_plane_size);
+                        frame.u_plane.resize(chroma_plane_size);
+                        frame.v_plane.resize(chroma_plane_size);
 
-                        for (int y = 0; y < height_; ++y) {
+                        for (int y = 0; y < slice_height; ++y) {
                             const std::uint8_t* src = data + static_cast<std::size_t>(y * stride);
-                            std::uint8_t* dst = frame.y_plane.data() + static_cast<std::size_t>(y * width_);
-                            std::memcpy(dst, src, static_cast<std::size_t>(width_));
+                            std::uint8_t* dst = frame.y_plane.data() + static_cast<std::size_t>(y * stride);
+                            std::memcpy(dst, src, static_cast<std::size_t>(stride));
                         }
 
                         const std::uint8_t* u_plane = data + y_plane_size;
                         const std::uint8_t* v_plane = u_plane + chroma_plane_size;
-                        const int chroma_width = width_ / 2;
-                        const int chroma_height = height_ / 2;
-                        for (int y = 0; y < chroma_height; ++y) {
+                        for (int y = 0; y < static_cast<int>(chroma_height); ++y) {
                             const std::uint8_t* src_u = u_plane + static_cast<std::size_t>(y * chroma_stride);
                             const std::uint8_t* src_v = v_plane + static_cast<std::size_t>(y * chroma_stride);
                             std::uint8_t* dst_u =
-                                frame.u_plane.data() + static_cast<std::size_t>(y * chroma_width);
+                                frame.u_plane.data() + static_cast<std::size_t>(y * chroma_stride);
                             std::uint8_t* dst_v =
-                                frame.v_plane.data() + static_cast<std::size_t>(y * chroma_width);
-                            std::memcpy(dst_u, src_u, static_cast<std::size_t>(chroma_width));
-                            std::memcpy(dst_v, src_v, static_cast<std::size_t>(chroma_width));
+                                frame.v_plane.data() + static_cast<std::size_t>(y * chroma_stride);
+                            std::memcpy(dst_u, src_u, chroma_stride);
+                            std::memcpy(dst_v, src_v, chroma_stride);
                         }
 
                         latest_frame_ = std::move(frame);
