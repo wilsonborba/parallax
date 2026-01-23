@@ -37,9 +37,9 @@ public:
 
     bool Initialize(const MediaCodecInitParams& params);
     void Shutdown();
-    void SubmitAnnexBFrame(const std::vector<std::uint8_t>& packet, std::int64_t presentation_time_us = 0,
-                           bool end_of_stream = false);
-    bool DrainDecodedFrames();
+    void SubmitPacket(const std::vector<std::uint8_t>& packet, std::int64_t presentation_time_us = 0,
+                      bool end_of_stream = false);
+    bool DecodeNextFrame();
     bool AcquireFrame(DecodedFrame& out_frame);
 
 private:
@@ -49,7 +49,8 @@ private:
         bool end_of_stream = false;
     };
 
-    bool GenerateTestPatternFrame();
+    void SubmitAnnexBFrame(const std::vector<std::uint8_t>& packet, std::int64_t presentation_time_us,
+                           bool end_of_stream);
     void CacheParameterSets(const std::vector<std::uint8_t>& packet);
     void FeedInputBuffers();
     bool DrainOutputBuffers();
@@ -57,7 +58,6 @@ private:
     std::optional<DecodedFrame> latest_frame_;
     std::vector<PendingPacket> pending_packets_;
     std::uint64_t frame_counter_ = 0;
-    bool use_test_pattern_ = true;
     int width_ = 0;
     int height_ = 0;
     std::optional<std::uintptr_t> output_texture_handle_;

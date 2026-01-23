@@ -30,7 +30,6 @@ bool MediaCodecDecoder::Initialize(const MediaCodecInitParams& params) {
     frame_counter_ = 0;
     pending_packets_.clear();
     latest_frame_.reset();
-    use_test_pattern_ = true;
 
 #if defined(__ANDROID__)
     if (params.output_surface != nullptr) {
@@ -84,7 +83,6 @@ bool MediaCodecDecoder::Initialize(const MediaCodecInitParams& params) {
     }
 
     std::cout << "MediaCodec decoder initialized for H.264 (" << width_ << "x" << height_ << ").\n";
-    use_test_pattern_ = false;
     return true;
 #else
     std::cout << "MediaCodec decoder placeholder initialized.\n";
@@ -102,7 +100,21 @@ void MediaCodecDecoder::Shutdown() {
 #endif
     pending_packets_.clear();
     latest_frame_.reset();
-    use_test_pattern_ = true;
+}
+
+void MediaCodecDecoder::SubmitPacket(const std::vector<std::uint8_t>& packet, std::int64_t presentation_time_us,
+                                     bool end_of_stream) {
+    SubmitAnnexBFrame(packet, presentation_time_us, end_of_stream);
+}
+
+bool MediaCodecDecoder::DecodeNextFrame() {
+    FeedInputBuffers();
+#if defined(__ANDROID__)
+    if (codec_) {
+        return DrainOutputBuffers();
+    }
+#endif
+    return false;
 }
 
 void MediaCodecDecoder::SubmitAnnexBFrame(const std::vector<std::uint8_t>& packet, std::int64_t presentation_time_us,
@@ -116,18 +128,6 @@ void MediaCodecDecoder::SubmitAnnexBFrame(const std::vector<std::uint8_t>& packe
     FeedInputBuffers();
 }
 
-bool MediaCodecDecoder::DrainDecodedFrames() {
-#if defined(__ANDROID__)
-    if (codec_) {
-        return DrainOutputBuffers();
-    }
-#endif
-    if (use_test_pattern_) {
-        return GenerateTestPatternFrame();
-    }
-    return false;
-}
-
 bool MediaCodecDecoder::AcquireFrame(DecodedFrame& out_frame) {
     if (!latest_frame_) {
         return false;
@@ -135,44 +135,6 @@ bool MediaCodecDecoder::AcquireFrame(DecodedFrame& out_frame) {
 
     out_frame = std::move(*latest_frame_);
     latest_frame_.reset();
-    return true;
-}
-
-bool MediaCodecDecoder::GenerateTestPatternFrame() {
-    constexpr int kFrameWidth = 320;
-    constexpr int kFrameHeight = 180;
-
-    DecodedFrame frame;
-    frame.width = kFrameWidth;
-    frame.height = kFrameHeight;
-    frame.y_stride = kFrameWidth;
-    frame.uv_stride = kFrameWidth / 2;
-    frame.y_plane_height = kFrameHeight;
-    frame.uv_plane_height = kFrameHeight / 2;
-    frame.frame_index = frame_counter_++;
-
-    const std::size_t luma_size =
-        static_cast<std::size_t>(frame.y_stride) * static_cast<std::size_t>(frame.y_plane_height);
-    const std::size_t chroma_size =
-        static_cast<std::size_t>(frame.uv_stride) * static_cast<std::size_t>(frame.uv_plane_height);
-
-    frame.y_plane.resize(luma_size);
-    frame.u_plane.resize(chroma_size);
-    frame.v_plane.resize(chroma_size);
-
-    for (int y = 0; y < kFrameHeight; ++y) {
-        for (int x = 0; x < kFrameWidth; ++x) {
-            frame.y_plane[static_cast<std::size_t>(y * frame.y_stride + x)] =
-                static_cast<std::uint8_t>((x + frame.frame_index) % 255);
-        }
-    }
-
-    const std::uint8_t u_value = static_cast<std::uint8_t>(96 + (frame.frame_index % 64));
-    const std::uint8_t v_value = static_cast<std::uint8_t>(160 - (frame.frame_index % 64));
-    std::fill(frame.u_plane.begin(), frame.u_plane.end(), u_value);
-    std::fill(frame.v_plane.begin(), frame.v_plane.end(), v_value);
-
-    latest_frame_ = std::move(frame);
     return true;
 }
 
