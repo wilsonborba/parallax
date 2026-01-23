@@ -1,14 +1,15 @@
-//! H.264 encoding pipeline.
+//! H.264 encoding pipeline (FFmpeg 7.x + ffmpeg-next 8.x compatible).
 //!
-//! Dependency approach:
-//! - Uses the `ffmpeg-next` crate, which binds to the host FFmpeg installation.
-//! - Hardware acceleration is attempted via FFmpeg's VAAPI device (`/dev/dri/render*`).
-//! - Software fallback uses the `libx264` encoder exposed by FFmpeg.
+//! Notes for your current stack (Debian FFmpeg 7.1.x, ffmpeg-next = "8"):
+//! - `ffmpeg_next::util::hwdevice` no longer exists in the public API you have.
+//! - A *proper* VAAPI path requires going through FFI (AVHWDeviceContext / AVHWFramesContext).
+//! - For a two-week MVP, keep VAAPI as a “not implemented” backend and ship software (`libx264`) first.
 //!
-//! The encoder outputs **Annex B** byte streams (start-code delimited NAL units).
-//! This keeps host/client framing consistent and avoids container headers on the wire.
+//! Output: **Annex B** (start-code delimited NAL units) via `packet.data()`.
 
 use std::collections::VecDeque;
+
+use ffmpeg_next as ffmpeg;
 
 #[derive(Debug, Clone, Copy)]
 pub enum EncoderBackend {
@@ -67,113 +68,52 @@ pub struct H264Config {
     pub prefer_vaapi: bool,
 }
 
-#[derive(Debug)]
 pub struct H264Encoder {
     backend: EncoderBackend,
     state: Option<EncoderState>,
     pending: VecDeque<EncodedFrame>,
 }
 
-#[derive(Debug)]
-enum EncoderState {
-    Vaapi(VaapiEncoder),
-    Software(SoftwareEncoder),
-}
-
-struct VaapiEncoder {
-    encoder: ffmpeg_next::codec::encoder::video::Video,
-    scaler: ffmpeg_next::software::scaling::Context,
-    sw_frame: ffmpeg_next::util::frame::video::Video,
-    hw_frame: ffmpeg_next::util::frame::video::Video,
-}
-
-impl std::fmt::Debug for VaapiEncoder {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("VaapiEncoder")
-            .field("encoder", &"<ffmpeg encoder>")
-            .field("scaler", &"<ffmpeg scaler>")
-            .field("sw_frame", &"<ffmpeg software frame>")
-            .field("hw_frame", &"<ffmpeg hardware frame>")
+impl std::fmt::Debug for H264Encoder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("H264Encoder")
+            .field("backend", &self.backend)
+            .field("state", &self.state)
+            .field("pending_len", &self.pending.len())
             .finish()
     }
 }
 
+#[derive(Debug)]
+enum EncoderState {
+    Vaapi,
+    Software(SoftwareEncoder),
+}
+
 struct SoftwareEncoder {
-    encoder: ffmpeg_next::codec::encoder::video::Video,
-    scaler: ffmpeg_next::software::scaling::Context,
-    sw_frame: ffmpeg_next::util::frame::video::Video,
+    encoder: ffmpeg::codec::encoder::video::Encoder,
+    scaler: ffmpeg::software::scaling::Context,
+    yuv: ffmpeg::frame::Video,
 }
 
 impl std::fmt::Debug for SoftwareEncoder {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("SoftwareEncoder")
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SoftwareEncoder")
             .field("encoder", &"<ffmpeg encoder>")
             .field("scaler", &"<ffmpeg scaler>")
-            .field("sw_frame", &"<ffmpeg software frame>")
+            .field("yuv", &"<ffmpeg frame>")
             .finish()
     }
 }
 
 pub fn init(config: H264Config) -> Result<H264Encoder, String> {
-    ffmpeg_next::init().map_err(|error| format!("FFmpeg init failed: {error}"))?;
+    ffmpeg::init().map_err(|e| format!("FFmpeg init failed: {e}"))?;
 
     if config.prefer_vaapi {
-        match init_vaapi() {
-            Ok(encoder) => return Ok(encoder),
-            Err(error) => {
-                println!("VAAPI unavailable, falling back to software: {error}");
-            }
-        }
+        // Keep the switch for later; MVP uses software.
+        println!("VAAPI requested but not implemented in this MVP build; using software.");
     }
 
-    init_software()
-}
-
-pub fn encode_frame(encoder: &mut H264Encoder, raw_frame: &RawFrame) -> Result<EncodedFrame, String> {
-    if let Some(frame) = encoder.pending.pop_front() {
-        return Ok(frame);
-    }
-
-    if encoder.state.is_none() {
-        let state = match encoder.backend {
-            EncoderBackend::Vaapi => EncoderState::Vaapi(init_vaapi_encoder(raw_frame)?),
-            EncoderBackend::Software => EncoderState::Software(init_software_encoder(raw_frame)?),
-        };
-        encoder.state = Some(state);
-    }
-
-    match encoder.state.as_mut().ok_or("Encoder state missing")? {
-        EncoderState::Vaapi(state) => encode_with_vaapi(state, raw_frame, &mut encoder.pending),
-        EncoderState::Software(state) => encode_with_software(state, raw_frame, &mut encoder.pending),
-    }
-}
-
-impl H264Encoder {
-    pub fn encode_frame(&mut self, raw_frame: &RawFrame) -> Result<EncodedFrame, String> {
-        encode_frame(self, raw_frame)
-    }
-}
-
-fn init_vaapi() -> Result<H264Encoder, String> {
-    let device = ffmpeg_next::util::hwdevice::Device::create(
-        ffmpeg_next::util::hwdevice::Type::VAAPI,
-        None,
-    )
-    .map_err(|error| format!("VAAPI device init failed: {error}"))?;
-
-    drop(device);
-
-    Ok(H264Encoder {
-        backend: EncoderBackend::Vaapi,
-        state: None,
-        pending: VecDeque::new(),
-    })
-}
-
-fn init_software() -> Result<H264Encoder, String> {
-    println!("Configuring software H.264 encoder");
     Ok(H264Encoder {
         backend: EncoderBackend::Software,
         state: None,
@@ -181,216 +121,151 @@ fn init_software() -> Result<H264Encoder, String> {
     })
 }
 
-fn init_vaapi_encoder(raw_frame: &RawFrame) -> Result<VaapiEncoder, String> {
-    let codec = ffmpeg_next::codec::encoder::find_by_name("h264_vaapi")
-        .ok_or("FFmpeg does not expose h264_vaapi")?;
-    let mut context = codec.video().map_err(|error| format!("VAAPI context: {error}"))?;
+pub fn encode_frame(encoder: &mut H264Encoder, raw: &RawFrame) -> Result<EncodedFrame, String> {
+    if let Some(frame) = encoder.pending.pop_front() {
+        return Ok(frame);
+    }
 
-    context.set_width(raw_frame.width);
-    context.set_height(raw_frame.height);
-    context.set_pixel_format(ffmpeg_next::format::Pixel::VAAPI);
-    context.set_time_base(ffmpeg_next::Rational::new(1, 60));
-    context.set_frame_rate(ffmpeg_next::Rational::new(60, 1));
-    context.set_bit_rate(4_000_000);
+    if encoder.state.is_none() {
+        encoder.state = Some(match encoder.backend {
+            EncoderBackend::Vaapi => EncoderState::Vaapi,
+            EncoderBackend::Software => EncoderState::Software(init_software_encoder(raw)?),
+        });
+    }
 
-    let device = ffmpeg_next::util::hwdevice::Device::create(
-        ffmpeg_next::util::hwdevice::Type::VAAPI,
-        None,
-    )
-    .map_err(|error| format!("VAAPI device init failed: {error}"))?;
-    context.set_hw_device_context(device);
-
-    let encoder = context
-        .open_as(codec)
-        .map_err(|error| format!("VAAPI open encoder: {error}"))?;
-
-    let input_format = match raw_frame.format {
-        RawPixelFormat::Bgra => ffmpeg_next::format::Pixel::BGRA,
-        RawPixelFormat::Rgba => ffmpeg_next::format::Pixel::RGBA,
-    };
-
-    let scaler = ffmpeg_next::software::scaling::Context::get(
-        input_format,
-        raw_frame.width,
-        raw_frame.height,
-        ffmpeg_next::format::Pixel::NV12,
-        raw_frame.width,
-        raw_frame.height,
-        ffmpeg_next::software::scaling::flag::Flags::BILINEAR,
-    )
-    .map_err(|error| format!("VAAPI scaler: {error}"))?;
-
-    let sw_frame = ffmpeg_next::util::frame::video::Video::new(
-        ffmpeg_next::format::Pixel::NV12,
-        raw_frame.width as u32,
-        raw_frame.height as u32,
-    );
-    let hw_frame = ffmpeg_next::util::frame::video::Video::new(
-        ffmpeg_next::format::Pixel::VAAPI,
-        raw_frame.width as u32,
-        raw_frame.height as u32,
-    );
-
-    Ok(VaapiEncoder {
-        encoder,
-        scaler,
-        sw_frame,
-        hw_frame,
-    })
+    match encoder.state.as_mut().ok_or("Encoder state missing")? {
+        EncoderState::Vaapi => Err(
+            "VAAPI backend is not implemented for ffmpeg-next 8 in this MVP (software works)."
+                .to_string(),
+        ),
+        EncoderState::Software(sw) => encode_with_software(sw, raw, &mut encoder.pending),
+    }
 }
 
-fn init_software_encoder(raw_frame: &RawFrame) -> Result<SoftwareEncoder, String> {
-    let codec = ffmpeg_next::codec::encoder::find_by_name("libx264")
-        .ok_or("FFmpeg does not expose libx264")?;
-    let mut context = codec.video().map_err(|error| format!("x264 context: {error}"))?;
+impl H264Encoder {
+    pub fn encode_frame(&mut self, raw: &RawFrame) -> Result<EncodedFrame, String> {
+        encode_frame(self, raw)
+    }
+}
 
-    context.set_width(raw_frame.width);
-    context.set_height(raw_frame.height);
-    context.set_pixel_format(ffmpeg_next::format::Pixel::YUV420P);
-    context.set_time_base(ffmpeg_next::Rational::new(1, 60));
-    context.set_frame_rate(ffmpeg_next::Rational::new(60, 1));
-    context.set_bit_rate(4_000_000);
+fn init_software_encoder(raw: &RawFrame) -> Result<SoftwareEncoder, String> {
+    let codec = ffmpeg::codec::encoder::find_by_name("libx264")
+        .ok_or("FFmpeg does not expose libx264 (is it built with --enable-libx264?)")?;
 
-    let encoder = context
-        .open_as(codec)
-        .map_err(|error| format!("x264 open encoder: {error}"))?;
+    // Create a codec context bound to this codec, then turn it into a video encoder context.
+    let ctx = ffmpeg::codec::context::Context::new_with_codec(codec);
+    let mut v = ctx
+        .encoder()
+        .video()
+        .map_err(|e| format!("encoder.video() failed: {e}"))?;
 
-    let input_format = match raw_frame.format {
-        RawPixelFormat::Bgra => ffmpeg_next::format::Pixel::BGRA,
-        RawPixelFormat::Rgba => ffmpeg_next::format::Pixel::RGBA,
+    v.set_width(raw.width);
+    v.set_height(raw.height);
+    v.set_format(ffmpeg::format::Pixel::YUV420P);
+    v.set_gop(60);
+    v.set_max_b_frames(0);
+
+    // Optional quality knobs. Safe to remove if you want fewer moving parts.
+    // (Bitrate is in bits/sec.)
+    v.set_bit_rate(4_000_000);
+
+    // Open encoder with x264 options. We force AnnexB and low latency-ish behavior.
+    let mut opts = ffmpeg::Dictionary::new();
+    opts.set("preset", "veryfast");
+    opts.set("tune", "zerolatency");
+    opts.set("profile", "baseline");
+    // Ensure AnnexB (most x264 builds default to AnnexB for H.264 bytestream, but we keep it explicit).
+    opts.set("x264-params", "annexb=1:repeat-headers=1");
+
+    let opened = v
+        .open_as_with(codec, opts)
+        .map_err(|e| format!("open_as_with(libx264) failed: {e}"))?;
+
+    let input_format = match raw.format {
+        RawPixelFormat::Bgra => ffmpeg::format::Pixel::BGRA,
+        RawPixelFormat::Rgba => ffmpeg::format::Pixel::RGBA,
     };
 
-    let scaler = ffmpeg_next::software::scaling::Context::get(
+    let scaler = ffmpeg::software::scaling::Context::get(
         input_format,
-        raw_frame.width,
-        raw_frame.height,
-        ffmpeg_next::format::Pixel::YUV420P,
-        raw_frame.width,
-        raw_frame.height,
-        ffmpeg_next::software::scaling::flag::Flags::BILINEAR,
+        raw.width,
+        raw.height,
+        ffmpeg::format::Pixel::YUV420P,
+        raw.width,
+        raw.height,
+        ffmpeg::software::scaling::flag::Flags::BILINEAR,
     )
-    .map_err(|error| format!("x264 scaler: {error}"))?;
+    .map_err(|e| format!("scaler init failed: {e}"))?;
 
-    let sw_frame = ffmpeg_next::util::frame::video::Video::new(
-        ffmpeg_next::format::Pixel::YUV420P,
-        raw_frame.width as u32,
-        raw_frame.height as u32,
-    );
+    let yuv = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::YUV420P, raw.width, raw.height);
 
     Ok(SoftwareEncoder {
-        encoder,
+        encoder: opened,
         scaler,
-        sw_frame,
+        yuv,
     })
-}
-
-fn encode_with_vaapi(
-    encoder: &mut VaapiEncoder,
-    raw_frame: &RawFrame,
-    pending: &mut VecDeque<EncodedFrame>,
-) -> Result<EncodedFrame, String> {
-    let input_format = match raw_frame.format {
-        RawPixelFormat::Bgra => ffmpeg_next::format::Pixel::BGRA,
-        RawPixelFormat::Rgba => ffmpeg_next::format::Pixel::RGBA,
-    };
-
-    let mut input = ffmpeg_next::util::frame::video::Video::new(
-        input_format,
-        raw_frame.width,
-        raw_frame.height,
-    );
-
-    let expected_stride = raw_frame.width as usize * raw_frame.format.bytes_per_pixel();
-    if raw_frame.stride != expected_stride {
-        return Err("VAAPI encoder expects tightly packed BGRA/RGBA data".to_string());
-    }
-
-    let plane = input.data_mut(0);
-    if plane.is_empty() {
-        return Err("Missing input plane".to_string());
-    }
-    if plane.len() != raw_frame.data.len() {
-        return Err("Input plane length mismatch".to_string());
-    }
-    plane.copy_from_slice(&raw_frame.data);
-
-    encoder
-        .scaler
-        .run(&input, &mut encoder.sw_frame)
-        .map_err(|error| format!("VAAPI scale: {error}"))?;
-
-    encoder
-        .hw_frame
-        .transfer(&encoder.sw_frame)
-        .map_err(|error| format!("VAAPI transfer: {error}"))?;
-
-    encoder
-        .encoder
-        .send_frame(&encoder.hw_frame)
-        .map_err(|error| format!("VAAPI send frame: {error}"))?;
-
-    drain_packets(&mut encoder.encoder, pending)
 }
 
 fn encode_with_software(
-    encoder: &mut SoftwareEncoder,
-    raw_frame: &RawFrame,
+    sw: &mut SoftwareEncoder,
+    raw: &RawFrame,
     pending: &mut VecDeque<EncodedFrame>,
 ) -> Result<EncodedFrame, String> {
-    let input_format = match raw_frame.format {
-        RawPixelFormat::Bgra => ffmpeg_next::format::Pixel::BGRA,
-        RawPixelFormat::Rgba => ffmpeg_next::format::Pixel::RGBA,
+    let input_format = match raw.format {
+        RawPixelFormat::Bgra => ffmpeg::format::Pixel::BGRA,
+        RawPixelFormat::Rgba => ffmpeg::format::Pixel::RGBA,
     };
 
-    let mut input = ffmpeg_next::util::frame::video::Video::new(
-        input_format,
-        raw_frame.width,
-        raw_frame.height,
-    );
-
-    let expected_stride = raw_frame.width as usize * raw_frame.format.bytes_per_pixel();
-    if raw_frame.stride != expected_stride {
-        return Err("Software encoder expects tightly packed BGRA/RGBA data".to_string());
+    let expected_stride = raw.width as usize * raw.format.bytes_per_pixel();
+    if raw.stride != expected_stride {
+        return Err("Encoder expects tightly packed BGRA/RGBA data".to_string());
     }
 
-    let plane = input.data_mut(0);
-    if plane.is_empty() {
-        return Err("Missing input plane".to_string());
+    // Build an input frame and copy raw bytes into plane 0.
+    let mut input = ffmpeg::frame::Video::new(input_format, raw.width, raw.height);
+
+    {
+        let plane0 = input.data_mut(0);
+        if plane0.is_empty() {
+            return Err("Input frame plane 0 is empty".to_string());
+        }
+        if plane0.len() != raw.data.len() {
+            return Err(format!(
+                "Input plane length mismatch: plane0={} raw={}",
+                plane0.len(),
+                raw.data.len()
+            ));
+        }
+        plane0.copy_from_slice(&raw.data);
     }
-    if plane.len() != raw_frame.data.len() {
-        return Err("Input plane length mismatch".to_string());
-    }
-    plane.copy_from_slice(&raw_frame.data);
 
-    encoder
-        .scaler
-        .run(&input, &mut encoder.sw_frame)
-        .map_err(|error| format!("x264 scale: {error}"))?;
+    // Convert RGBA/BGRA -> YUV420P.
+    sw.scaler
+        .run(&input, &mut sw.yuv)
+        .map_err(|e| format!("scale (RGBA/BGRA -> YUV420P) failed: {e}"))?;
 
-    encoder
-        .encoder
-        .send_frame(&encoder.sw_frame)
-        .map_err(|error| format!("x264 send frame: {error}"))?;
+    // Send and drain.
+    sw.encoder
+        .send_frame(&sw.yuv)
+        .map_err(|e| format!("send_frame failed: {e}"))?;
 
-    drain_packets(&mut encoder.encoder, pending)
+    drain_packets(&mut sw.encoder, pending)
 }
 
 fn drain_packets(
-    encoder: &mut ffmpeg_next::codec::encoder::video::Video,
+    enc: &mut ffmpeg::codec::encoder::video::Encoder,
     pending: &mut VecDeque<EncodedFrame>,
 ) -> Result<EncodedFrame, String> {
-    let mut packet = ffmpeg_next::Packet::empty();
-    while encoder
-        .receive_packet(&mut packet)
-        .map(|_| true)
-        .unwrap_or(false)
-    {
-        let data = match packet.data() {
-            Some(data) if !data.is_empty() => data.to_vec(),
-            Some(_) => return Err("Encoded packet was empty".to_string()),
-            None => return Err("Encoded packet missing data".to_string()),
-        };
-        let is_keyframe = packet.is_key();
+    let mut pkt = ffmpeg::Packet::empty();
+
+    while enc.receive_packet(&mut pkt).is_ok() {
+        let data = pkt.data().ok_or("Encoded packet missing data")?.to_vec();
+
+        if data.is_empty() {
+            return Err("Encoded packet was empty".to_string());
+        }
+
+        let is_keyframe = pkt.is_key();
         pending.push_back(EncodedFrame {
             data,
             is_keyframe,
@@ -400,5 +275,5 @@ fn drain_packets(
 
     pending
         .pop_front()
-        .ok_or("No encoded packets produced".to_string())
+        .ok_or_else(|| "No encoded packets produced".to_string())
 }

@@ -6,4 +6,9 @@ edition = "2024"
 [dependencies]
 libc = "0.2"
 x11 = "2.21"
-ffmpeg-next = { version = "7", features = ["device"] }
+ffmpeg-next = { version = "8", default-features = false, features = [
+  "codec",
+  "format",
+  "device",
+  "software-scaling"
+] }

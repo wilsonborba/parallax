@@ -2,7 +2,7 @@ use std::cmp;
 use std::ffi::CString;
 use std::ptr;
 
-use libc::{IPC_CREAT, IPC_PRIVATE, SHM_R, SHM_W, shmctl, shmdt, shmget, shmat};
+use libc::{IPC_CREAT, IPC_PRIVATE, SHM_R, SHM_W, shmat, shmctl, shmdt, shmget};
 use x11::xlib;
 use x11::xshm;
 
@@ -86,8 +86,9 @@ impl X11Capture {
             return Err("X11 display connection is not available".to_string());
         }
 
-        let all_planes_shm: u32 = xlib::XAllPlanes().try_into().unwrap_or(u32::MAX);
-        let all_planes_get: u64 = xlib::XAllPlanes();
+        let all_planes_raw = unsafe { xlib::XAllPlanes() };
+        let all_planes_shm: u32 = all_planes_raw.try_into().unwrap_or(u32::MAX);
+        let all_planes_get: u64 = all_planes_raw;
 
         if self.use_xshm {
             let shm = self
@@ -95,14 +96,7 @@ impl X11Capture {
                 .as_ref()
                 .ok_or_else(|| "XShm state missing while XShm is enabled".to_string())?;
             let status = unsafe {
-                xshm::XShmGetImage(
-                    self.display,
-                    self.root,
-                    shm.image,
-                    0,
-                    0,
-                    all_planes_shm,
-                )
+                xshm::XShmGetImage(self.display, self.root, shm.image, 0, 0, all_planes_shm)
             };
             if status == 0 {
                 eprintln!("XShmGetImage failed to capture a frame.");
@@ -161,13 +155,7 @@ impl X11Capture {
         }
 
         let image_size = unsafe { (*image).bytes_per_line as usize * (*image).height as usize };
-        let shmid = unsafe {
-            shmget(
-                IPC_PRIVATE,
-                image_size,
-                IPC_CREAT | SHM_R | SHM_W,
-            )
-        };
+        let shmid = unsafe { shmget(IPC_PRIVATE, image_size, IPC_CREAT | SHM_R | SHM_W) };
         if shmid == -1 {
             unsafe {
                 xlib::XDestroyImage(image);
