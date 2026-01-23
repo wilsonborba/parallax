@@ -8,6 +8,10 @@
 struct DecodedFrame {
     int width = 0;
     int height = 0;
+    int y_stride = 0;
+    int uv_stride = 0;
+    int y_plane_height = 0;
+    int uv_plane_height = 0;
     std::vector<std::uint8_t> y_plane;
     std::vector<std::uint8_t> u_plane;
     std::vector<std::uint8_t> v_plane;
@@ -26,6 +30,9 @@ struct MediaCodecInitParams {
 
 class MediaCodecDecoder {
 public:
+    // NOTE: We intentionally use CPU-side YUV output. The renderer consumes
+    // packed Y/U/V planes, so we copy MediaCodec buffers into DecodedFrame
+    // with stride metadata. Surface/texture output is not wired yet.
     ~MediaCodecDecoder();
 
     bool Initialize(const MediaCodecInitParams& params);

@@ -107,14 +107,16 @@ void QuadRenderer::UploadFrame(const DecodedFrame& frame, TextureSet& textures) 
 void QuadRenderer::ConvertYuvToRgb(const DecodedFrame& frame, TextureSet& textures) {
     const int width = frame.width;
     const int height = frame.height;
+    const int y_stride = frame.y_stride > 0 ? frame.y_stride : width;
+    const int uv_stride = frame.uv_stride > 0 ? frame.uv_stride : (width / 2);
     textures.rgb.resize(static_cast<std::size_t>(width * height * 3));
 
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
-            const int y_index = y * width + x;
+            const int y_index = y * y_stride + x;
             const int chroma_x = x / 2;
             const int chroma_y = y / 2;
-            const int chroma_index = chroma_y * (width / 2) + chroma_x;
+            const int chroma_index = chroma_y * uv_stride + chroma_x;
 
             const int luma = static_cast<int>(frame.y_plane[static_cast<std::size_t>(y_index)]);
             const int u = static_cast<int>(frame.u_plane[static_cast<std::size_t>(chroma_index)]) - 128;
@@ -128,7 +130,7 @@ void QuadRenderer::ConvertYuvToRgb(const DecodedFrame& frame, TextureSet& textur
             g = std::clamp(g, 0, 255);
             b = std::clamp(b, 0, 255);
 
-            const std::size_t out_index = static_cast<std::size_t>(y_index * 3);
+            const std::size_t out_index = static_cast<std::size_t>((y * width + x) * 3);
             textures.rgb[out_index + 0] = static_cast<std::uint8_t>(r);
             textures.rgb[out_index + 1] = static_cast<std::uint8_t>(g);
             textures.rgb[out_index + 2] = static_cast<std::uint8_t>(b);
