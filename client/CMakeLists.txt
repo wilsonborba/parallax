@@ -12,7 +12,10 @@ add_executable(parallax_client
     src/QuadRenderer.cpp
 )
 
-target_include_directories(parallax_client PRIVATE include)
+target_include_directories(parallax_client PRIVATE
+    include
+    ${CMAKE_CURRENT_LIST_DIR}/../proto
+)
 
 find_package(OpenXR QUIET)
 if (OpenXR_FOUND)
