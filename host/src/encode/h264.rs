@@ -157,8 +157,8 @@ impl H264Encoder {
 }
 
 fn init_vaapi() -> Result<H264Encoder, String> {
-    let device = ffmpeg_next::device::Device::create(
-        ffmpeg_next::device::Type::VAAPI,
+    let device = ffmpeg_next::util::hwdevice::Device::create(
+        ffmpeg_next::util::hwdevice::Type::VAAPI,
         None,
     )
     .map_err(|error| format!("VAAPI device init failed: {error}"))?;
@@ -192,8 +192,8 @@ fn init_vaapi_encoder(raw_frame: &RawFrame) -> Result<VaapiEncoder, String> {
     context.set_frame_rate(Some(ffmpeg_next::Rational::new(60, 1)));
     context.set_bit_rate(4_000_000);
 
-    let device = ffmpeg_next::device::Device::create(
-        ffmpeg_next::device::Type::VAAPI,
+    let device = ffmpeg_next::util::hwdevice::Device::create(
+        ffmpeg_next::util::hwdevice::Type::VAAPI,
         None,
     )
     .map_err(|error| format!("VAAPI device init failed: {error}"))?;
