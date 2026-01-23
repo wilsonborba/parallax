@@ -296,7 +296,7 @@ fn encode_with_vaapi(
 
     encoder
         .hw_frame
-        .transfer_from(&encoder.sw_frame)
+        .upload(&encoder.sw_frame)
         .map_err(|error| format!("VAAPI upload: {error}"))?;
 
     encoder
