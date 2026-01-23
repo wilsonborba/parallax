@@ -1,3 +1,7 @@
+use std::net::UdpSocket;
+
+use crate::net::UdpPacket;
+
 #[derive(Debug)]
 pub struct UdpConfig {
     pub bind_addr: String,
@@ -6,8 +10,7 @@ pub struct UdpConfig {
 
 #[derive(Debug)]
 pub struct UdpStreamer {
-    bind_addr: String,
-    target_addr: String,
+    socket: UdpSocket,
 }
 
 pub fn init(config: UdpConfig) -> Result<UdpStreamer, String> {
@@ -20,8 +23,21 @@ pub fn init(config: UdpConfig) -> Result<UdpStreamer, String> {
         config.bind_addr, config.target_addr
     );
 
+    let socket = UdpSocket::bind(&config.bind_addr)
+        .map_err(|error| format!("Failed to bind UDP socket: {error}"))?;
+    socket
+        .connect(&config.target_addr)
+        .map_err(|error| format!("Failed to connect UDP socket: {error}"))?;
+
     Ok(UdpStreamer {
-        bind_addr: config.bind_addr,
-        target_addr: config.target_addr,
+        socket,
     })
+}
+
+impl UdpStreamer {
+    pub fn send_packet(&self, packet: &UdpPacket) -> Result<usize, String> {
+        self.socket
+            .send(&packet.to_bytes())
+            .map_err(|error| format!("Failed to send UDP packet: {error}"))
+    }
 }
