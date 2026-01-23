@@ -7,7 +7,6 @@
 
 namespace {
 constexpr std::uint16_t kDefaultUdpPort = 7777;
-constexpr int kPlaceholderFrameCount = 120;
 constexpr int kDefaultVideoWidth = 1920;
 constexpr int kDefaultVideoHeight = 1080;
 } // namespace
@@ -92,13 +91,13 @@ bool OpenXRApp::InitializeOpenXR() {
 }
 
 void OpenXRApp::FrameLoop() {
-    for (int frame = 0; running_ && frame < kPlaceholderFrameCount; ++frame) {
+    while (running_) {
         auto packet = udp_receiver_.ReceivePacket();
         if (!packet.empty()) {
-            decoder_.SubmitAnnexBFrame(packet);
+            decoder_.SubmitPacket(packet);
         }
 
-        if (decoder_.DrainDecodedFrames()) {
+        while (decoder_.DecodeNextFrame()) {
             DecodedFrame decoded_frame;
             if (decoder_.AcquireFrame(decoded_frame)) {
                 renderer_.RenderFrame(decoded_frame);
