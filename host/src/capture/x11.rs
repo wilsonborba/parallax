@@ -91,6 +91,7 @@ impl X11Capture {
                 .shm
                 .as_ref()
                 .ok_or_else(|| "XShm state missing while XShm is enabled".to_string())?;
+            let all_planes = xlib::XAllPlanes();
             let status = unsafe {
                 xshm::XShmGetImage(
                     self.display,
@@ -98,7 +99,7 @@ impl X11Capture {
                     shm.image,
                     0,
                     0,
-                    xlib::AllPlanes,
+                    all_planes,
                 )
             };
             if status == 0 {
@@ -107,6 +108,7 @@ impl X11Capture {
             }
             unsafe { self.copy_image(shm.image) }
         } else {
+            let all_planes = xlib::XAllPlanes();
             let image = unsafe {
                 xlib::XGetImage(
                     self.display,
@@ -115,7 +117,7 @@ impl X11Capture {
                     0,
                     self.width,
                     self.height,
-                    xlib::AllPlanes,
+                    all_planes,
                     xlib::ZPixmap,
                 )
             };
