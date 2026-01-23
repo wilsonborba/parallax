@@ -120,7 +120,7 @@ fn main() {
 
     let mut capture = capture;
     let mut encoder = encoder;
-    let mut streamer = streamer;
+    let streamer = streamer;
     let mut frame_counter: u64 = 0;
     let mut packet_counter: u64 = 0;
 
