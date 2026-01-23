@@ -186,10 +186,11 @@ fn init_vaapi_encoder(raw_frame: &RawFrame) -> Result<VaapiEncoder, String> {
         .ok_or("FFmpeg does not expose h264_vaapi")?;
     let mut context = codec.video().map_err(|error| format!("VAAPI context: {error}"))?;
 
-    context.set_dimensions(raw_frame.width, raw_frame.height);
-    context.set_format(ffmpeg_next::format::Pixel::VAAPI);
+    context.set_width(raw_frame.width);
+    context.set_height(raw_frame.height);
+    context.set_pixel_format(ffmpeg_next::format::Pixel::VAAPI);
     context.set_time_base(ffmpeg_next::Rational::new(1, 60));
-    context.set_frame_rate(Some(ffmpeg_next::Rational::new(60, 1)));
+    context.set_frame_rate(ffmpeg_next::Rational::new(60, 1));
     context.set_bit_rate(4_000_000);
 
     let device = ffmpeg_next::util::hwdevice::Device::create(
@@ -200,7 +201,7 @@ fn init_vaapi_encoder(raw_frame: &RawFrame) -> Result<VaapiEncoder, String> {
     context.set_hw_device_context(device);
 
     let encoder = context
-        .open(codec)
+        .open_as(codec)
         .map_err(|error| format!("VAAPI open encoder: {error}"))?;
 
     let input_format = match raw_frame.format {
@@ -243,14 +244,15 @@ fn init_software_encoder(raw_frame: &RawFrame) -> Result<SoftwareEncoder, String
         .ok_or("FFmpeg does not expose libx264")?;
     let mut context = codec.video().map_err(|error| format!("x264 context: {error}"))?;
 
-    context.set_dimensions(raw_frame.width, raw_frame.height);
-    context.set_format(ffmpeg_next::format::Pixel::YUV420P);
+    context.set_width(raw_frame.width);
+    context.set_height(raw_frame.height);
+    context.set_pixel_format(ffmpeg_next::format::Pixel::YUV420P);
     context.set_time_base(ffmpeg_next::Rational::new(1, 60));
-    context.set_frame_rate(Some(ffmpeg_next::Rational::new(60, 1)));
+    context.set_frame_rate(ffmpeg_next::Rational::new(60, 1));
     context.set_bit_rate(4_000_000);
 
     let encoder = context
-        .open(codec)
+        .open_as(codec)
         .map_err(|error| format!("x264 open encoder: {error}"))?;
 
     let input_format = match raw_frame.format {
