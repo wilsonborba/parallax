@@ -14,6 +14,8 @@
 
 namespace {
 constexpr std::size_t kHeaderSizeBytes = parallax::proto::kHeaderSizeBytes;
+constexpr std::uint64_t kPacketLogInterval = 120;
+constexpr std::uint64_t kFrameLogInterval = 30;
 } // namespace
 
 UdpReceiver::~UdpReceiver() {
@@ -107,6 +109,14 @@ std::vector<std::uint8_t> UdpReceiver::ReceivePacket() {
             continue;
         }
 
+        ++received_packet_count_;
+        if (received_packet_count_ - last_logged_packet_count_ >= kPacketLogInterval) {
+            std::cout << "UDP packets received: " << received_packet_count_ << " (frame "
+                      << frame_id << ", packet " << packet_id + 1 << "/" << packet_count
+                      << ").\n";
+            last_logged_packet_count_ = received_packet_count_;
+        }
+
         auto& frame = frames_[frame_id];
         if (frame.packet_count != packet_count || frame.packets.empty()) {
             frame.packet_count = packet_count;
@@ -133,6 +143,12 @@ std::vector<std::uint8_t> UdpReceiver::ReceivePacket() {
             }
 
             frames_.erase(frame_id);
+            ++assembled_frame_count_;
+            if (assembled_frame_count_ - last_logged_frame_count_ >= kFrameLogInterval) {
+                std::cout << "Assembled frames: " << assembled_frame_count_ << " ("
+                          << received_packet_count_ << " packets).\n";
+                last_logged_frame_count_ = assembled_frame_count_;
+            }
             return assembled;
         }
     }

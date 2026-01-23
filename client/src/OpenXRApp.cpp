@@ -9,6 +9,7 @@ namespace {
 constexpr std::uint16_t kDefaultUdpPort = 7777;
 constexpr int kDefaultVideoWidth = 1920;
 constexpr int kDefaultVideoHeight = 1080;
+constexpr std::uint64_t kFrameLogInterval = 30;
 } // namespace
 
 bool OpenXRApp::Initialize() {
@@ -94,6 +95,12 @@ void OpenXRApp::FrameLoop() {
     while (running_) {
         auto packet = udp_receiver_.ReceivePacket();
         if (!packet.empty()) {
+            ++received_frame_count_;
+            if (received_frame_count_ - last_logged_frame_count_ >= kFrameLogInterval) {
+                std::cout << "ReceivePacket returned " << received_frame_count_
+                          << " non-empty frames.\n";
+                last_logged_frame_count_ = received_frame_count_;
+            }
             decoder_.SubmitPacket(packet);
         }
 
