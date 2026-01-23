@@ -80,7 +80,6 @@ enum EncoderState {
     Software(SoftwareEncoder),
 }
 
-#[derive(Debug)]
 struct VaapiEncoder {
     encoder: ffmpeg_next::codec::encoder::video::Video,
     scaler: ffmpeg_next::software::scaling::Context,
@@ -88,7 +87,6 @@ struct VaapiEncoder {
     hw_frame: ffmpeg_next::util::frame::video::Video,
 }
 
-#[derive(Debug)]
 struct SoftwareEncoder {
     encoder: ffmpeg_next::codec::encoder::video::Video,
     scaler: ffmpeg_next::software::scaling::Context,
