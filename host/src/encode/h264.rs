@@ -1,9 +1,9 @@
-//! H.264 encoding pipeline (FFmpeg 7.x + ffmpeg-next 8.x compatible).
+//! H.264 encoding pipeline (Debian FFmpeg 7.x + ffmpeg-next 8.x compatible).
 //!
 //! Notes for your current stack (Debian FFmpeg 7.1.x, ffmpeg-next = "8"):
-//! - `ffmpeg_next::util::hwdevice` no longer exists in the public API you have.
-//! - A *proper* VAAPI path requires going through FFI (AVHWDeviceContext / AVHWFramesContext).
-//! - For a two-week MVP, keep VAAPI as a “not implemented” backend and ship software (`libx264`) first.
+//! - `ffmpeg_next::util::hwdevice` is not exposed in the safe wrapper API.
+//! - A proper VAAPI path requires lower-level FFI (AVHWDeviceContext / AVHWFramesContext).
+//! - For a two-week MVP, keep VAAPI as "not implemented" and ship software (`libx264`) first.
 //!
 //! Output: **Annex B** (start-code delimited NAL units) via `packet.data()`.
 
@@ -94,6 +94,7 @@ struct SoftwareEncoder {
     encoder: ffmpeg::codec::encoder::video::Encoder,
     scaler: ffmpeg::software::scaling::Context,
     yuv: ffmpeg::frame::Video,
+    next_pts: i64,
 }
 
 impl std::fmt::Debug for SoftwareEncoder {
@@ -102,6 +103,7 @@ impl std::fmt::Debug for SoftwareEncoder {
             .field("encoder", &"<ffmpeg encoder>")
             .field("scaler", &"<ffmpeg scaler>")
             .field("yuv", &"<ffmpeg frame>")
+            .field("next_pts", &self.next_pts)
             .finish()
     }
 }
@@ -159,22 +161,35 @@ fn init_software_encoder(raw: &RawFrame) -> Result<SoftwareEncoder, String> {
         .video()
         .map_err(|e| format!("encoder.video() failed: {e}"))?;
 
+    // -----------------------------
+    // REQUIRED FOR X264:
+    // time_base MUST be set before opening the encoder.
+    // -----------------------------
+    // 60 fps MVP target
+    let tb = ffmpeg::Rational::new(1, 60);
+    v.set_time_base(tb);
+
+    // If your ffmpeg-next exposes frame-rate setter, this is useful but not strictly required
+    // for x264 to open once time_base is set. We keep it conservative: no frame_rate call
+    // here because the signature varies across wrapper versions.
+
     v.set_width(raw.width);
     v.set_height(raw.height);
     v.set_format(ffmpeg::format::Pixel::YUV420P);
+
+    // Basic GOP for low-latency streaming
     v.set_gop(60);
     v.set_max_b_frames(0);
 
-    // Optional quality knobs. Safe to remove if you want fewer moving parts.
-    // (Bitrate is in bits/sec.)
+    // Bitrate is in bits/sec.
     v.set_bit_rate(4_000_000);
 
-    // Open encoder with x264 options. We force AnnexB and low latency-ish behavior.
+    // Open encoder with x264 options. Force AnnexB and low latency-ish behavior.
     let mut opts = ffmpeg::Dictionary::new();
     opts.set("preset", "veryfast");
     opts.set("tune", "zerolatency");
     opts.set("profile", "baseline");
-    // Ensure AnnexB (most x264 builds default to AnnexB for H.264 bytestream, but we keep it explicit).
+    // Keep bytestream explicit
     opts.set("x264-params", "annexb=1:repeat-headers=1");
 
     let opened = v
@@ -203,6 +218,7 @@ fn init_software_encoder(raw: &RawFrame) -> Result<SoftwareEncoder, String> {
         encoder: opened,
         scaler,
         yuv,
+        next_pts: 0,
     })
 }
 
@@ -244,6 +260,10 @@ fn encode_with_software(
         .run(&input, &mut sw.yuv)
         .map_err(|e| format!("scale (RGBA/BGRA -> YUV420P) failed: {e}"))?;
 
+    // Provide monotonically increasing timestamps.
+    sw.yuv.set_pts(Some(sw.next_pts));
+    sw.next_pts += 1;
+
     // Send and drain.
     sw.encoder
         .send_frame(&sw.yuv)
@@ -258,6 +278,8 @@ fn drain_packets(
 ) -> Result<EncodedFrame, String> {
     let mut pkt = ffmpeg::Packet::empty();
 
+    // We stop draining on the first error (EAGAIN / EOF / etc).
+    // This avoids depending on ffmpeg-next error variant names.
     while enc.receive_packet(&mut pkt).is_ok() {
         let data = pkt.data().ok_or("Encoded packet missing data")?.to_vec();
 
