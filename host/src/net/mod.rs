@@ -1,3 +1,3 @@
 pub mod packet;
 
-pub use packet::{packetize_frame, PacketHeader, UdpPacket};
+pub use packet::{packetize_frame, UdpPacket};
