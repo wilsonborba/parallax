@@ -25,7 +25,7 @@ bool OpenXRApp::Initialize() {
         return false;
     }
 
-    if (!renderer_.Initialize()) {
+    if (!renderer_.Initialize(instance_, system_id_)) {
         return false;
     }
 
@@ -42,6 +42,7 @@ void OpenXRApp::Run() {
 }
 
 void OpenXRApp::Shutdown() {
+    renderer_.Shutdown();
 #if PARALLAX_HAVE_OPENXR && PARALLAX_HAS_OPENXR_HEADERS
     if (instance_ != XR_NULL_HANDLE) {
         xrDestroyInstance(instance_);
@@ -94,10 +95,11 @@ void OpenXRApp::FrameLoop() {
             decoder_.SubmitPacket(packet);
         }
 
-        MediaCodecDecoder::DecodedFrame frame_data;
-        if (decoder_.DecodeNextFrame(&frame_data)) {
-            renderer_.RenderFrame(frame_data);
-            decoder_.ReleaseFrame(frame_data);
+        if (decoder_.DecodeNextFrame()) {
+            DecodedFrame decoded_frame;
+            if (decoder_.AcquireFrame(decoded_frame)) {
+                renderer_.RenderFrame(decoded_frame);
+            }
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(16));

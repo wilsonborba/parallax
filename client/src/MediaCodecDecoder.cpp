@@ -81,135 +81,47 @@ void MediaCodecDecoder::SubmitPacket(const std::vector<std::uint8_t>& packet, in
     FeedInputBuffers();
 }
 
-bool MediaCodecDecoder::DecodeNextFrame(DecodedFrame* frame) {
-    if (!frame) {
-        return false;
-    }
+bool MediaCodecDecoder::DecodeNextFrame() {
+    // Placeholder: fabricate a simple YUV frame to exercise the renderer.
+    constexpr int kFrameWidth = 320;
+    constexpr int kFrameHeight = 180;
 
-#if defined(__ANDROID__)
-    if (!codec_) {
-        return false;
-    }
+    DecodedFrame frame;
+    frame.width = kFrameWidth;
+    frame.height = kFrameHeight;
+    frame.frame_index = frame_counter_++;
 
-    FeedInputBuffers();
+    const std::size_t luma_size = static_cast<std::size_t>(kFrameWidth * kFrameHeight);
+    const std::size_t chroma_width = kFrameWidth / 2;
+    const std::size_t chroma_height = kFrameHeight / 2;
+    const std::size_t chroma_size = static_cast<std::size_t>(chroma_width * chroma_height);
 
-    AMediaCodecBufferInfo buffer_info{};
-    ssize_t output_index = AMediaCodec_dequeueOutputBuffer(codec_, &buffer_info, 0);
-    if (output_index == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED) {
-        AMediaFormat* format = AMediaCodec_getOutputFormat(codec_);
-        if (format) {
-            AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_WIDTH, &width_);
-            AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_HEIGHT, &height_);
-            AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_STRIDE, &stride_);
-            AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_SLICE_HEIGHT, &slice_height_);
-            AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_COLOR_FORMAT, &color_format_);
-            AMediaFormat_delete(format);
+    frame.y_plane.resize(luma_size);
+    frame.u_plane.resize(chroma_size);
+    frame.v_plane.resize(chroma_size);
+
+    for (int y = 0; y < kFrameHeight; ++y) {
+        for (int x = 0; x < kFrameWidth; ++x) {
+            frame.y_plane[static_cast<std::size_t>(y * kFrameWidth + x)] =
+                static_cast<std::uint8_t>((x + frame.frame_index) % 255);
         }
-        return false;
     }
 
-    if (output_index < 0) {
-        return false;
-    }
+    const std::uint8_t u_value = static_cast<std::uint8_t>(96 + (frame.frame_index % 64));
+    const std::uint8_t v_value = static_cast<std::uint8_t>(160 - (frame.frame_index % 64));
+    std::fill(frame.u_plane.begin(), frame.u_plane.end(), u_value);
+    std::fill(frame.v_plane.begin(), frame.v_plane.end(), v_value);
 
-    frame->width = width_;
-    frame->height = height_;
-    frame->presentation_time_us = buffer_info.presentationTimeUs;
-    frame->buffer_index = static_cast<int>(output_index);
-    frame->texture_output = use_surface_output_;
-
-    if (use_surface_output_) {
-        frame->plane_count = 0;
-        return true;
-    }
-
-    size_t data_size = 0;
-    std::uint8_t* data = AMediaCodec_getOutputBuffer(codec_, output_index, &data_size);
-    if (!data || data_size == 0) {
-        return false;
-    }
-
-    std::uint8_t* base = data + buffer_info.offset;
-    int y_stride = stride_ > 0 ? stride_ : width_;
-    int y_height = slice_height_ > 0 ? slice_height_ : height_;
-    int uv_stride = y_stride / 2;
-    int uv_height = y_height / 2;
-    size_t y_size = static_cast<size_t>(y_stride) * static_cast<size_t>(y_height);
-    size_t uv_size = static_cast<size_t>(uv_stride) * static_cast<size_t>(uv_height);
-
-    size_t required_size = y_size + 2 * uv_size;
-    if (buffer_info.size < static_cast<int32_t>(required_size)) {
-        required_size = static_cast<size_t>(buffer_info.size);
-    }
-
-    frame->plane_count = 3;
-    frame->planes[0] = {base, y_stride, static_cast<int>(std::min(y_size, required_size))};
-
-    std::uint8_t* u_plane = base + y_size;
-    std::uint8_t* v_plane = u_plane + uv_size;
-    frame->planes[1] = {u_plane, uv_stride, static_cast<int>(std::min(uv_size, required_size - y_size))};
-    frame->planes[2] = {v_plane, uv_stride,
-                        static_cast<int>(std::min(uv_size, required_size - y_size - uv_size))};
+    latest_frame_ = std::move(frame);
     return true;
-#else
-    (void)frame;
-    return false;
-#endif
 }
 
-void MediaCodecDecoder::ReleaseFrame(const DecodedFrame& frame) {
-#if defined(__ANDROID__)
-    if (!codec_ || frame.buffer_index < 0) {
-        return;
-    }
-    AMediaCodec_releaseOutputBuffer(codec_, frame.buffer_index, frame.texture_output);
-#else
-    (void)frame;
-#endif
-}
-
-void MediaCodecDecoder::Shutdown() {
-#if defined(__ANDROID__)
-    if (codec_) {
-        AMediaCodec_stop(codec_);
-        AMediaCodec_delete(codec_);
-        codec_ = nullptr;
-    }
-#endif
-    pending_packets_.clear();
-}
-
-void MediaCodecDecoder::FeedInputBuffers() {
-#if defined(__ANDROID__)
-    if (!codec_) {
-        return;
+bool MediaCodecDecoder::AcquireFrame(DecodedFrame& out_frame) {
+    if (!latest_frame_) {
+        return false;
     }
 
-    while (!pending_packets_.empty()) {
-        ssize_t input_index = AMediaCodec_dequeueInputBuffer(codec_, 0);
-        if (input_index < 0) {
-            break;
-        }
-
-        PendingPacket packet = std::move(pending_packets_.front());
-        pending_packets_.pop_front();
-
-        size_t buffer_size = 0;
-        std::uint8_t* buffer = AMediaCodec_getInputBuffer(codec_, input_index, &buffer_size);
-        if (!buffer) {
-            AMediaCodec_queueInputBuffer(codec_, input_index, 0, 0, packet.presentation_time_us, 0);
-            continue;
-        }
-
-        size_t copy_size = std::min(buffer_size, packet.data.size());
-        if (copy_size > 0) {
-            std::memcpy(buffer, packet.data.data(), copy_size);
-        }
-
-        uint32_t flags = packet.end_of_stream ? AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM : 0;
-        AMediaCodec_queueInputBuffer(codec_, input_index, 0, copy_size, packet.presentation_time_us, flags);
-    }
-#else
-    return;
-#endif
+    out_frame = std::move(*latest_frame_);
+    latest_frame_.reset();
+    return true;
 }
