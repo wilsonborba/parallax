@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <chrono>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -16,6 +17,7 @@ private:
         std::uint16_t packet_count = 0;
         std::vector<std::vector<std::uint8_t>> packets;
         std::size_t received_packets = 0;
+        std::chrono::steady_clock::time_point first_packet_time{};
     };
 
     std::uint16_t port_ = 0;

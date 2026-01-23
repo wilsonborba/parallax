@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cerrno>
+#include <chrono>
 #include <cstring>
 #include <iostream>
 
@@ -16,6 +17,7 @@ namespace {
 constexpr std::size_t kHeaderSizeBytes = parallax::proto::kHeaderSizeBytes;
 constexpr std::uint64_t kPacketLogInterval = 120;
 constexpr std::uint64_t kFrameLogInterval = 30;
+constexpr std::chrono::milliseconds kFrameAssemblyTimeoutMs{40};
 } // namespace
 
 UdpReceiver::~UdpReceiver() {
@@ -117,11 +119,21 @@ std::vector<std::uint8_t> UdpReceiver::ReceivePacket() {
             last_logged_packet_count_ = received_packet_count_;
         }
 
+        const auto now = std::chrono::steady_clock::now();
+        for (auto it = frames_.begin(); it != frames_.end();) {
+            if (now - it->second.first_packet_time > kFrameAssemblyTimeoutMs) {
+                it = frames_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+
         auto& frame = frames_[frame_id];
         if (frame.packet_count != packet_count || frame.packets.empty()) {
             frame.packet_count = packet_count;
             frame.packets.assign(packet_count, {});
             frame.received_packets = 0;
+            frame.first_packet_time = now;
         }
 
         if (frame.packets[packet_id].empty()) {
