@@ -7,6 +7,7 @@ bool QuadRenderer::Initialize() {
     return true;
 }
 
-void QuadRenderer::RenderFrame() {
-    // Placeholder: issue draw calls for the streaming quad.
+void QuadRenderer::RenderFrame(const MediaCodecDecoder::DecodedFrame& frame) {
+    (void)frame;
+    // Placeholder: bind YUV planes or texture output for rendering.
 }
