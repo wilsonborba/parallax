@@ -321,8 +321,8 @@ fn encode_with_vaapi(
 
     encoder
         .hw_frame
-        .upload(&encoder.sw_frame)
-        .map_err(|error| format!("VAAPI upload: {error}"))?;
+        .transfer(&encoder.sw_frame)
+        .map_err(|error| format!("VAAPI transfer: {error}"))?;
 
     encoder
         .encoder
