@@ -86,8 +86,8 @@ impl X11Capture {
             return Err("X11 display connection is not available".to_string());
         }
 
-        let all_planes = u32::try_from(xlib::XAllPlanes())
-            .map_err(|_| "XAllPlanes value does not fit into u32".to_string())?;
+        let all_planes_shm: u32 = xlib::XAllPlanes().try_into().unwrap_or(u32::MAX);
+        let all_planes_get: u64 = xlib::XAllPlanes();
 
         if self.use_xshm {
             let shm = self
@@ -101,7 +101,7 @@ impl X11Capture {
                     shm.image,
                     0,
                     0,
-                    all_planes,
+                    all_planes_shm,
                 )
             };
             if status == 0 {
@@ -118,7 +118,7 @@ impl X11Capture {
                     0,
                     self.width,
                     self.height,
-                    all_planes,
+                    all_planes_get,
                     xlib::ZPixmap,
                 )
             };
