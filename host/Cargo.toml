@@ -6,4 +6,4 @@ edition = "2024"
 [dependencies]
 libc = "0.2"
 x11 = "2.21"
-ffmpeg-next = "6"
+ffmpeg-next = "7"

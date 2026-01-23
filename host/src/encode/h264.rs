@@ -82,7 +82,7 @@ enum EncoderState {
 
 #[derive(Debug)]
 struct VaapiEncoder {
-    encoder: ffmpeg_next::encoder::video::Video,
+    encoder: ffmpeg_next::codec::encoder::video::Video,
     scaler: ffmpeg_next::software::scaling::Context,
     sw_frame: ffmpeg_next::util::frame::video::Video,
     hw_frame: ffmpeg_next::util::frame::video::Video,
@@ -90,7 +90,7 @@ struct VaapiEncoder {
 
 #[derive(Debug)]
 struct SoftwareEncoder {
-    encoder: ffmpeg_next::encoder::video::Video,
+    encoder: ffmpeg_next::codec::encoder::video::Video,
     scaler: ffmpeg_next::software::scaling::Context,
     sw_frame: ffmpeg_next::util::frame::video::Video,
 }
@@ -136,8 +136,8 @@ impl H264Encoder {
 }
 
 fn init_vaapi() -> Result<H264Encoder, String> {
-    let device = ffmpeg_next::hardware::Device::create(
-        ffmpeg_next::hardware::Type::VAAPI,
+    let device = ffmpeg_next::util::hwdevice::Device::create(
+        ffmpeg_next::util::hwdevice::Type::VAAPI,
         None,
     )
     .map_err(|error| format!("VAAPI device init failed: {error}"))?;
@@ -161,26 +161,25 @@ fn init_software() -> Result<H264Encoder, String> {
 }
 
 fn init_vaapi_encoder(raw_frame: &RawFrame) -> Result<VaapiEncoder, String> {
-    let codec = ffmpeg_next::encoder::find_by_name("h264_vaapi")
+    let codec = ffmpeg_next::codec::encoder::find_by_name("h264_vaapi")
         .ok_or("FFmpeg does not expose h264_vaapi")?;
     let mut context = codec.video().map_err(|error| format!("VAAPI context: {error}"))?;
 
-    context.set_width(raw_frame.width as i32);
-    context.set_height(raw_frame.height as i32);
+    context.set_dimensions(raw_frame.width, raw_frame.height);
     context.set_format(ffmpeg_next::format::Pixel::VAAPI);
-    context.set_time_base((1, 60));
-    context.set_frame_rate(Some((60, 1)));
+    context.set_time_base(ffmpeg_next::Rational::new(1, 60));
+    context.set_frame_rate(Some(ffmpeg_next::Rational::new(60, 1)));
     context.set_bit_rate(4_000_000);
 
-    let device = ffmpeg_next::hardware::Device::create(
-        ffmpeg_next::hardware::Type::VAAPI,
+    let device = ffmpeg_next::util::hwdevice::Device::create(
+        ffmpeg_next::util::hwdevice::Type::VAAPI,
         None,
     )
     .map_err(|error| format!("VAAPI device init failed: {error}"))?;
     context.set_hw_device_context(device);
 
     let encoder = context
-        .open_as(codec)
+        .open(codec)
         .map_err(|error| format!("VAAPI open encoder: {error}"))?;
 
     let input_format = match raw_frame.format {
@@ -219,19 +218,18 @@ fn init_vaapi_encoder(raw_frame: &RawFrame) -> Result<VaapiEncoder, String> {
 }
 
 fn init_software_encoder(raw_frame: &RawFrame) -> Result<SoftwareEncoder, String> {
-    let codec = ffmpeg_next::encoder::find_by_name("libx264")
+    let codec = ffmpeg_next::codec::encoder::find_by_name("libx264")
         .ok_or("FFmpeg does not expose libx264")?;
     let mut context = codec.video().map_err(|error| format!("x264 context: {error}"))?;
 
-    context.set_width(raw_frame.width as i32);
-    context.set_height(raw_frame.height as i32);
+    context.set_dimensions(raw_frame.width, raw_frame.height);
     context.set_format(ffmpeg_next::format::Pixel::YUV420P);
-    context.set_time_base((1, 60));
-    context.set_frame_rate(Some((60, 1)));
+    context.set_time_base(ffmpeg_next::Rational::new(1, 60));
+    context.set_frame_rate(Some(ffmpeg_next::Rational::new(60, 1)));
     context.set_bit_rate(4_000_000);
 
     let encoder = context
-        .open_as(codec)
+        .open(codec)
         .map_err(|error| format!("x264 open encoder: {error}"))?;
 
     let input_format = match raw_frame.format {
@@ -347,7 +345,7 @@ fn encode_with_software(
 }
 
 fn drain_packets(
-    encoder: &mut ffmpeg_next::encoder::video::Video,
+    encoder: &mut ffmpeg_next::codec::encoder::video::Video,
     pending: &mut VecDeque<EncodedFrame>,
 ) -> Result<EncodedFrame, String> {
     let mut packet = ffmpeg_next::Packet::empty();
