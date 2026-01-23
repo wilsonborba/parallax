@@ -21,7 +21,10 @@ bool OpenXRApp::Initialize() {
         return false;
     }
 
-    if (!decoder_.Initialize(kDefaultVideoWidth, kDefaultVideoHeight)) {
+    MediaCodecInitParams decoder_params;
+    decoder_params.width = kDefaultVideoWidth;
+    decoder_params.height = kDefaultVideoHeight;
+    if (!decoder_.Initialize(decoder_params)) {
         return false;
     }
 
@@ -92,10 +95,10 @@ void OpenXRApp::FrameLoop() {
     for (int frame = 0; running_ && frame < kPlaceholderFrameCount; ++frame) {
         auto packet = udp_receiver_.ReceivePacket();
         if (!packet.empty()) {
-            decoder_.SubmitPacket(packet);
+            decoder_.SubmitAnnexBFrame(packet);
         }
 
-        if (decoder_.DecodeNextFrame()) {
+        if (decoder_.DrainDecodedFrames()) {
             DecodedFrame decoded_frame;
             if (decoder_.AcquireFrame(decoded_frame)) {
                 renderer_.RenderFrame(decoded_frame);
