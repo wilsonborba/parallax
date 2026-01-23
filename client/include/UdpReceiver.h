@@ -21,4 +21,8 @@ private:
     std::uint16_t port_ = 0;
     int socket_fd_ = -1;
     std::unordered_map<std::uint32_t, FrameAssembly> frames_;
+    std::uint64_t received_packet_count_ = 0;
+    std::uint64_t assembled_frame_count_ = 0;
+    std::uint64_t last_logged_packet_count_ = 0;
+    std::uint64_t last_logged_frame_count_ = 0;
 };
