@@ -280,10 +280,14 @@ fn encode_with_vaapi(
         return Err("VAAPI encoder expects tightly packed BGRA/RGBA data".to_string());
     }
 
-    input
-        .data_mut(0)
-        .ok_or("Missing input plane")?
-        .copy_from_slice(&raw_frame.data);
+    let plane = input.data_mut(0);
+    if plane.is_empty() {
+        return Err("Missing input plane".to_string());
+    }
+    if plane.len() != raw_frame.data.len() {
+        return Err("Input plane length mismatch".to_string());
+    }
+    plane.copy_from_slice(&raw_frame.data);
 
     encoder
         .scaler
@@ -324,10 +328,14 @@ fn encode_with_software(
         return Err("Software encoder expects tightly packed BGRA/RGBA data".to_string());
     }
 
-    input
-        .data_mut(0)
-        .ok_or("Missing input plane")?
-        .copy_from_slice(&raw_frame.data);
+    let plane = input.data_mut(0);
+    if plane.is_empty() {
+        return Err("Missing input plane".to_string());
+    }
+    if plane.len() != raw_frame.data.len() {
+        return Err("Input plane length mismatch".to_string());
+    }
+    plane.copy_from_slice(&raw_frame.data);
 
     encoder
         .scaler
@@ -352,7 +360,11 @@ fn drain_packets(
         .map(|_| true)
         .unwrap_or(false)
     {
-        let data = packet.data().to_vec();
+        let data = match packet.data() {
+            Some(data) if !data.is_empty() => data.to_vec(),
+            Some(_) => return Err("Encoded packet was empty".to_string()),
+            None => return Err("Encoded packet missing data".to_string()),
+        };
         let is_keyframe = packet.is_key();
         pending.push_back(EncodedFrame {
             data,
