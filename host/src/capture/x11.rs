@@ -216,11 +216,16 @@ impl X11Capture {
         if image.is_null() {
             return Err("Cannot copy null XImage".to_string());
         }
-        let size = (*image).bytes_per_line as usize * (*image).height as usize;
-        if size == 0 || (*image).data.is_null() {
+        let (size, data_ptr) = unsafe {
+            (
+                (*image).bytes_per_line as usize * (*image).height as usize,
+                (*image).data,
+            )
+        };
+        if size == 0 || data_ptr.is_null() {
             return Err("Captured XImage has no data".to_string());
         }
-        let buffer = std::slice::from_raw_parts((*image).data as *const u8, size);
+        let buffer = unsafe { std::slice::from_raw_parts(data_ptr as *const u8, size) };
         Ok((buffer.to_vec(), self.width, self.height))
     }
 }
