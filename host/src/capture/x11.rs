@@ -12,6 +12,7 @@ use x11::xshm;
 // X11 errors are async; MIT-SHM failures (BadShmSeg) can otherwise kill the process.
 // We trap X errors around XShmGetImage and fall back to XGetImage.
 static X11_SHM_ERROR: AtomicBool = AtomicBool::new(false);
+static CURSOR_CAPTURE_LOGGED: AtomicBool = AtomicBool::new(false);
 
 unsafe extern "C" fn x11_error_handler(
     _display: *mut xlib::Display,
@@ -333,6 +334,13 @@ impl X11Capture {
             return;
         }
 
+        if CURSOR_CAPTURE_LOGGED
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            println!("Compositing XFixes cursor image into captured frames.");
+        }
+
         unsafe {
             self.composite_cursor_image(cursor, frame);
             xlib::XFree(cursor as *mut _);
@@ -360,8 +368,8 @@ impl X11Capture {
             return;
         }
 
-        let origin_x = cursor_ref.x - cursor_ref.xhot;
-        let origin_y = cursor_ref.y - cursor_ref.yhot;
+        let origin_x = i32::from(cursor_ref.x) - i32::from(cursor_ref.xhot);
+        let origin_y = i32::from(cursor_ref.y) - i32::from(cursor_ref.yhot);
 
         let frame_width_i32 = *frame_width as i32;
         let frame_height_i32 = *frame_height as i32;
