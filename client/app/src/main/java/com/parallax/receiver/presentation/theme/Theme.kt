@@ -1,4 +1,4 @@
-package com.parallax.receiver.ui.theme
+package com.parallax.receiver.presentation.theme
 
 import android.app.Activity
 import android.os.Build

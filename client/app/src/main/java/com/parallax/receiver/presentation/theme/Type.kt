@@ -1,4 +1,4 @@
-package com.parallax.receiver.ui.theme
+package com.parallax.receiver.presentation.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
