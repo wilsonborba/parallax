@@ -4,7 +4,9 @@ use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use libc::{IPC_CREAT, IPC_PRIVATE, SHM_R, SHM_W, shmat, shmctl, shmdt, shmget};
+use x11::xfixes;
 use x11::xlib;
+use x11::xrender;
 use x11::xshm;
 
 // X11 errors are async; MIT-SHM failures (BadShmSeg) can otherwise kill the process.
@@ -38,6 +40,13 @@ pub struct X11Capture {
     height: u32,
     use_xshm: bool,
     shm: Option<ShmState>,
+    cursor_capture: CursorCapture,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CursorCapture {
+    Disabled,
+    XFixes,
 }
 
 pub fn init(config: X11CaptureConfig) -> Result<X11Capture, String> {
@@ -67,6 +76,7 @@ pub fn init(config: X11CaptureConfig) -> Result<X11Capture, String> {
         height,
         use_xshm: false,
         shm: None,
+        cursor_capture: CursorCapture::Disabled,
     };
 
     println!(
@@ -86,6 +96,30 @@ pub fn init(config: X11CaptureConfig) -> Result<X11Capture, String> {
         }
     } else {
         println!("XShm extension unavailable; using XGetImage fallback.");
+    }
+
+    let mut xfixes_event_base = 0;
+    let mut xfixes_error_base = 0;
+    let xfixes_supported = unsafe {
+        xfixes::XFixesQueryExtension(display, &mut xfixes_event_base, &mut xfixes_error_base) != 0
+    };
+
+    let mut xrender_event_base = 0;
+    let mut xrender_error_base = 0;
+    let xrender_supported = unsafe {
+        xrender::XRenderQueryExtension(display, &mut xrender_event_base, &mut xrender_error_base)
+            != 0
+    };
+
+    if xfixes_supported {
+        capture.cursor_capture = CursorCapture::XFixes;
+        println!("XFixes cursor capture enabled; compositing cursor into frames.");
+    } else if xrender_supported {
+        println!(
+            "XRender extension detected but XFixes is unavailable; cursor capture disabled."
+        );
+    } else {
+        println!("No XFixes/XRender cursor support detected; cursor capture disabled.");
     }
 
     Ok(capture)
@@ -143,7 +177,9 @@ impl X11Capture {
                 return self.capture_frame(); // retry once using XGetImage
             }
 
-            unsafe { self.copy_image(shm.image) }
+            let mut result = unsafe { self.copy_image(shm.image) }?;
+            self.composite_cursor_if_needed(&mut result);
+            Ok(result)
         } else {
             self.capture_frame_xgetimage(all_planes_get)
         }
@@ -175,13 +211,14 @@ impl X11Capture {
             return Err("Failed to capture frame with XGetImage".to_string());
         }
 
-        let result = unsafe { self.copy_image(image) };
+        let mut result = unsafe { self.copy_image(image) }?;
+        self.composite_cursor_if_needed(&mut result);
 
         unsafe {
             xlib::XDestroyImage(image);
         }
 
-        result
+        Ok(result)
     }
 
     fn disable_xshm(&mut self) {
@@ -284,6 +321,99 @@ impl X11Capture {
 
         let buffer = unsafe { std::slice::from_raw_parts(data_ptr as *const u8, size) };
         Ok((buffer.to_vec(), self.width, self.height))
+    }
+
+    fn composite_cursor_if_needed(&self, frame: &mut (Vec<u8>, u32, u32)) {
+        if self.cursor_capture != CursorCapture::XFixes {
+            return;
+        }
+
+        let cursor = unsafe { xfixes::XFixesGetCursorImage(self.display) };
+        if cursor.is_null() {
+            return;
+        }
+
+        unsafe {
+            self.composite_cursor_image(cursor, frame);
+            xlib::XFree(cursor as *mut _);
+        }
+    }
+
+    unsafe fn composite_cursor_image(
+        &self,
+        cursor: *mut xfixes::XFixesCursorImage,
+        frame: &mut (Vec<u8>, u32, u32),
+    ) {
+        if cursor.is_null() {
+            return;
+        }
+
+        let (buffer, frame_width, frame_height) = frame;
+        if buffer.is_empty() || *frame_width == 0 || *frame_height == 0 {
+            return;
+        }
+
+        let cursor_ref = unsafe { &*cursor };
+        let cursor_width = cursor_ref.width as i32;
+        let cursor_height = cursor_ref.height as i32;
+        if cursor_width <= 0 || cursor_height <= 0 {
+            return;
+        }
+
+        let origin_x = cursor_ref.x - cursor_ref.xhot;
+        let origin_y = cursor_ref.y - cursor_ref.yhot;
+
+        let frame_width_i32 = *frame_width as i32;
+        let frame_height_i32 = *frame_height as i32;
+
+        for cy in 0..cursor_height {
+            let dest_y = origin_y + cy;
+            if dest_y < 0 || dest_y >= frame_height_i32 {
+                continue;
+            }
+
+            for cx in 0..cursor_width {
+                let dest_x = origin_x + cx;
+                if dest_x < 0 || dest_x >= frame_width_i32 {
+                    continue;
+                }
+
+                let cursor_index = (cy as usize * cursor_width as usize) + cx as usize;
+                let pixel = unsafe { *cursor_ref.pixels.add(cursor_index) } as u64;
+                let argb = (pixel & 0xFFFF_FFFF) as u32;
+
+                let alpha = ((argb >> 24) & 0xFF) as u8;
+                if alpha == 0 {
+                    continue;
+                }
+
+                let src_r = ((argb >> 16) & 0xFF) as u8;
+                let src_g = ((argb >> 8) & 0xFF) as u8;
+                let src_b = (argb & 0xFF) as u8;
+
+                let dest_index =
+                    ((dest_y as u32 * *frame_width + dest_x as u32) * 4) as usize;
+
+                if dest_index + 3 >= buffer.len() {
+                    continue;
+                }
+
+                let dst_b = buffer[dest_index];
+                let dst_g = buffer[dest_index + 1];
+                let dst_r = buffer[dest_index + 2];
+
+                let inv_alpha = 255u16 - alpha as u16;
+                let alpha_u16 = alpha as u16;
+
+                buffer[dest_index] =
+                    ((src_b as u16 * alpha_u16 + dst_b as u16 * inv_alpha) / 255) as u8;
+                buffer[dest_index + 1] =
+                    ((src_g as u16 * alpha_u16 + dst_g as u16 * inv_alpha) / 255) as u8;
+                buffer[dest_index + 2] =
+                    ((src_r as u16 * alpha_u16 + dst_r as u16 * inv_alpha) / 255) as u8;
+                buffer[dest_index + 3] = 0xFF;
+            }
+        }
     }
 }
 
