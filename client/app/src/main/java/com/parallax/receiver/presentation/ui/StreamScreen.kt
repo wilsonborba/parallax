@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,9 +23,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Fullscreen
-import androidx.compose.material.icons.filled.FullscreenExit
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -43,7 +46,9 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalDensity
@@ -73,6 +78,8 @@ fun StreamScreen(
     val status = uiState.streamState.status
     var isFullscreen by remember { mutableStateOf(false) }
     var hasSetInitialScale by remember { mutableStateOf(false) }
+    var isHiddenMenuOpen by remember { mutableStateOf(false) }
+    var showDebugPanel by remember { mutableStateOf(false) }
     Surface(
         modifier = modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
@@ -130,31 +137,82 @@ fun StreamScreen(
                             .width(previewWidth)
                             .height(previewHeight)
                     }
-                    VideoArea(
-                        onSurfaceAvailable = onSurfaceAvailable,
-                        onSurfaceDestroyed = onSurfaceDestroyed,
-                        scale = uiState.config.scale,
-                        modifier = videoModifier,
-                    )
+                    Box(modifier = videoModifier) {
+                        VideoArea(
+                            onSurfaceAvailable = onSurfaceAvailable,
+                            onSurfaceDestroyed = onSurfaceDestroyed,
+                            scale = uiState.config.scale,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                        StreamStatusBadge(
+                            status = status,
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(spacing.small),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(spacing.extraSmall),
+                        ) {
+                            IconButton(
+                                onClick = { isHiddenMenuOpen = true },
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .alpha(0.35f),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "Open hidden menu",
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = isHiddenMenuOpen,
+                                onDismissRequest = { isHiddenMenuOpen = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = if (showDebugPanel) {
+                                                "Hide debug panel"
+                                            } else {
+                                                "Open debug panel"
+                                            },
+                                        )
+                                    },
+                                    onClick = {
+                                        showDebugPanel = !showDebugPanel
+                                        isHiddenMenuOpen = false
+                                    },
+                                )
+                            }
+                        }
+                        AnimatedVisibility(
+                            visible = showDebugPanel,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(spacing.small),
+                        ) {
+                            DebugPanel(
+                                uiState = uiState,
+                                onClose = { showDebugPanel = false },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
                 }
             }
-            IconButton(
+            OutlinedButton(
                 onClick = { isFullscreen = !isFullscreen },
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(spacing.medium)
-                    .size(40.dp),
+                    .padding(spacing.medium),
             ) {
-                Icon(
-                    imageVector = if (isFullscreen) {
-                        Icons.Default.FullscreenExit
-                    } else {
-                        Icons.Default.Fullscreen
-                    },
-                    contentDescription = if (isFullscreen) {
+                Text(
+                    text = if (isFullscreen) {
                         "Exit fullscreen"
                     } else {
-                        "Enter fullscreen"
+                        "Fullscreen"
                     },
                 )
             }
@@ -277,6 +335,101 @@ fun VideoArea(
             },
             modifier = Modifier.fillMaxSize(),
         )
+    }
+}
+
+@Composable
+private fun StreamStatusBadge(
+    status: StreamState.Status,
+    modifier: Modifier = Modifier,
+) {
+    val label = when (status) {
+        StreamState.Status.Idle -> "Idle"
+        StreamState.Status.Connecting -> "Connecting…"
+        StreamState.Status.Streaming -> "Streaming"
+        StreamState.Status.Error -> "Error"
+    }
+    val color = when (status) {
+        StreamState.Status.Idle -> MaterialTheme.colorScheme.onSurfaceVariant
+        StreamState.Status.Connecting -> MaterialTheme.colorScheme.primary
+        StreamState.Status.Streaming -> MaterialTheme.colorScheme.tertiary
+        StreamState.Status.Error -> MaterialTheme.colorScheme.error
+    }
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+        shape = MaterialTheme.shapes.small,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+            color = color,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        )
+    }
+}
+
+@Composable
+private fun DebugPanel(
+    uiState: UiState,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val spacing = MaterialTheme.spacing
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+        shape = MaterialTheme.shapes.medium,
+        tonalElevation = 2.dp,
+        shadowElevation = 4.dp,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(spacing.medium),
+            verticalArrangement = Arrangement.spacedBy(spacing.small),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    text = "Debug panel",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                IconButton(onClick = onClose, modifier = Modifier.size(24.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close debug panel",
+                    )
+                }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = "Status: ${uiState.streamState.status}",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    text = "Endpoint: ${uiState.config.host}:${uiState.config.port}",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    text = "Scale: ${String.format("%.2f", uiState.config.scale)}x",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                if (uiState.streamState.message != null) {
+                    Text(
+                        text = "Message: ${uiState.streamState.message}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
     }
 }
 
