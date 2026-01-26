@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -23,8 +24,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Fullscreen
-import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -203,23 +202,17 @@ fun StreamScreen(
                     }
                 }
             }
-            IconButton(
+            OutlinedButton(
                 onClick = { isFullscreen = !isFullscreen },
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(spacing.medium)
-                    .size(40.dp),
+                    .padding(spacing.medium),
             ) {
-                Icon(
-                    imageVector = if (isFullscreen) {
-                        Icons.Default.FullscreenExit
-                    } else {
-                        Icons.Default.Fullscreen
-                    },
-                    contentDescription = if (isFullscreen) {
+                Text(
+                    text = if (isFullscreen) {
                         "Exit fullscreen"
                     } else {
-                        "Enter fullscreen"
+                        "Fullscreen"
                     },
                 )
             }
