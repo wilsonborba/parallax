@@ -73,8 +73,8 @@ fun StreamScreen(
 ) {
     val spacing = MaterialTheme.spacing
     val status = uiState.streamState.status
-    var controlsVisible by rememberSaveable { mutableStateOf(false) }
-    var autoFitApplied by rememberSaveable { mutableStateOf(false) }
+    var controlsVisible by remember { mutableStateOf(false) }
+    var autoFitApplied by remember { mutableStateOf(false) }
     Surface(
         modifier = modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
@@ -395,6 +395,65 @@ private fun ControlsToggle(
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
         )
+    }
+}
+
+@Composable
+fun VideoArea(
+    baseWidth: Dp,
+    baseHeight: Dp,
+    scale: Float,
+    onSurfaceAvailable: (Surface) -> Unit,
+    onSurfaceDestroyed: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val currentOnSurfaceAvailable by rememberUpdatedState(onSurfaceAvailable)
+    val currentOnSurfaceDestroyed by rememberUpdatedState(onSurfaceDestroyed)
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            modifier = Modifier
+                .width(baseWidth)
+                .height(baseHeight)
+                .graphicsLayer(scaleX = scale, scaleY = scale)
+                .border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.outline,
+                    shape = MaterialTheme.shapes.medium,
+                ),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = MaterialTheme.shapes.medium,
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+        ) {
+            AndroidView(
+                factory = { context ->
+                    SurfaceView(context).apply {
+                        holder.addCallback(
+                            object : SurfaceHolder.Callback {
+                                override fun surfaceCreated(holder: SurfaceHolder) {
+                                    currentOnSurfaceAvailable(holder.surface)
+                                }
+
+                                override fun surfaceChanged(
+                                    holder: SurfaceHolder,
+                                    format: Int,
+                                    width: Int,
+                                    height: Int,
+                                ) = Unit
+
+                                override fun surfaceDestroyed(holder: SurfaceHolder) {
+                                    currentOnSurfaceDestroyed()
+                                }
+                            },
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
     }
 }
 
