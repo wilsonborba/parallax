@@ -4,12 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.parallax.receiver.core.logging.Logger
 import com.parallax.receiver.core.logging.LoggerProvider
-import com.parallax.receiver.domain.model.StreamConfig
 import com.parallax.receiver.domain.model.StreamState
+import com.parallax.receiver.domain.model.UiState
 import com.parallax.receiver.domain.service.StreamSessionService
 import com.parallax.receiver.domain.module.SetScaleUseCase
 import com.parallax.receiver.domain.module.StartStreamUseCase
 import com.parallax.receiver.domain.module.StopStreamUseCase
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 class StreamViewModel(
@@ -19,22 +20,22 @@ class StreamViewModel(
     private val setScale: SetScaleUseCase,
     private val logger: Logger = LoggerProvider.logger,
 ) : ViewModel() {
-    val uiState = streamSessionService.uiState
+    val uiState: StateFlow<UiState> = streamSessionService.uiState
     private var lastStatus: StreamState.Status? = null
 
     init {
         observeStateTransitions()
     }
 
-    fun startStream(config: StreamConfig) {
-        startStream.invoke(config)
+    fun onStartClicked() {
+        startStream.invoke(uiState.value.config)
     }
 
-    fun stopStream() {
+    fun onStopClicked() {
         stopStream.invoke()
     }
 
-    fun setScale(scale: Float) {
+    fun onScaleChanged(scale: Float) {
         setScale.invoke(scale)
     }
 

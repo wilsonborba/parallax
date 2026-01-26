@@ -1,47 +1,68 @@
 package com.parallax.receiver.presentation.ui
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.activity.viewModels
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import com.parallax.receiver.dal.local.SharedPreferencesSettingsStore
+import com.parallax.receiver.domain.module.SetScaleUseCase
+import com.parallax.receiver.domain.module.StartStreamUseCase
+import com.parallax.receiver.domain.module.StopStreamUseCase
+import com.parallax.receiver.domain.service.StreamSessionService
 import com.parallax.receiver.presentation.theme.ReceiverTheme
+import com.parallax.receiver.presentation.vm.StreamViewModel
 
 class MainActivity : ComponentActivity() {
+    private val streamViewModel: StreamViewModel by viewModels {
+        StreamViewModelFactory(this)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             ReceiverTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
-                        modifier = Modifier.padding(innerPadding)
-                    )
-                }
+                val uiState by streamViewModel.uiState.collectAsState()
+                StreamScreen(
+                    uiState = uiState,
+                    onStartClicked = streamViewModel::onStartClicked,
+                    onStopClicked = streamViewModel::onStopClicked,
+                    onScaleChanged = streamViewModel::onScaleChanged,
+                )
             }
         }
     }
 }
 
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
+private class StreamViewModelFactory(
+    private val context: Context,
+) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(StreamViewModel::class.java)) {
+            val sharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val settingsStore = SharedPreferencesSettingsStore(sharedPreferences)
+            val streamSessionService = StreamSessionService(settingsStore = settingsStore)
+            val startStreamUseCase = StartStreamUseCase(streamSessionService)
+            val stopStreamUseCase = StopStreamUseCase(streamSessionService)
+            val setScaleUseCase = SetScaleUseCase(settingsStore, streamSessionService)
+            @Suppress("UNCHECKED_CAST")
+            return StreamViewModel(
+                streamSessionService = streamSessionService,
+                startStream = startStreamUseCase,
+                stopStream = stopStreamUseCase,
+                setScale = setScaleUseCase,
+            ) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
+    }
 
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    ReceiverTheme {
-        Greeting("Android")
+    private companion object {
+        private const val PREFS_NAME = "receiver.settings"
     }
 }
