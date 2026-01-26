@@ -1,4 +1,4 @@
-package com.parallax.receiver.ui.theme
+package com.parallax.receiver.presentation.theme
 
 import androidx.compose.ui.graphics.Color
 
