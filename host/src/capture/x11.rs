@@ -368,8 +368,8 @@ impl X11Capture {
             return;
         }
 
-        let origin_x = cursor_ref.x - cursor_ref.xhot;
-        let origin_y = cursor_ref.y - cursor_ref.yhot;
+        let origin_x = i32::from(cursor_ref.x) - i32::from(cursor_ref.xhot);
+        let origin_y = i32::from(cursor_ref.y) - i32::from(cursor_ref.yhot);
 
         let frame_width_i32 = *frame_width as i32;
         let frame_height_i32 = *frame_height as i32;
