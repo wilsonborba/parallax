@@ -1,5 +1,6 @@
 package com.parallax.receiver.domain.service
 
+import com.parallax.receiver.dal.local.SettingsStore
 import com.parallax.receiver.domain.model.StreamConfig
 import com.parallax.receiver.domain.model.StreamState
 import com.parallax.receiver.domain.model.UiState
@@ -17,10 +18,11 @@ import kotlinx.coroutines.launch
 class StreamSessionService(
     private val coroutineScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     private val connectionDelayMillis: Long = 750L,
+    private val settingsStore: SettingsStore,
     initialConfig: StreamConfig = StreamConfig(
         host = "127.0.0.1",
         port = 5000,
-        scale = 1.0f,
+        scale = settingsStore.getScale(),
     ),
 ) {
     private val mutableState = MutableStateFlow(
