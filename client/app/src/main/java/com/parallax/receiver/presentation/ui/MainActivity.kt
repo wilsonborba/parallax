@@ -6,8 +6,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.parallax.receiver.dal.local.SharedPreferencesSettingsStore
@@ -28,13 +33,19 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             ReceiverTheme {
-                val uiState by streamViewModel.uiState.collectAsState()
-                StreamScreen(
-                    uiState = uiState,
-                    onStartClicked = streamViewModel::onStartClicked,
-                    onStopClicked = streamViewModel::onStopClicked,
-                    onScaleChanged = streamViewModel::onScaleChanged,
-                )
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background,
+                    tonalElevation = 0.dp,
+                ) {
+                    val uiState by streamViewModel.uiState.collectAsState()
+                    StreamScreen(
+                        uiState = uiState,
+                        onStartClicked = streamViewModel::onStartClicked,
+                        onStopClicked = streamViewModel::onStopClicked,
+                        onScaleChanged = streamViewModel::onScaleChanged,
+                    )
+                }
             }
         }
     }
