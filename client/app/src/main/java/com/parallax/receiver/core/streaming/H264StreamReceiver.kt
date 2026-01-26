@@ -52,7 +52,11 @@ class H264StreamReceiver(
                         logger.info(TAG, "Socket bound", mapOf("port" to port))
                     }
                 } catch (e: Exception) {
-                    logger.error(TAG, "Failed to bind socket", e)
+                    logger.error(
+                        TAG,
+                        "Failed to bind socket",
+                        mapOf("error" to e.message, "exception" to e),
+                    )
                     throw e
                 }
                 val decoder = MediaCodec.createDecoderByType(MIME_TYPE)
@@ -114,7 +118,11 @@ class H264StreamReceiver(
                 }
             } catch (e: Exception) {
                 if (isActive) {
-                    logger.error(TAG, "Streaming receiver failed", e)
+                    logger.error(
+                        TAG,
+                        "Streaming receiver failed",
+                        mapOf("error" to e.message, "exception" to e),
+                    )
                 }
             } finally {
                 mediaCodec?.stop()
