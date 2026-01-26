@@ -115,7 +115,11 @@ class StreamSessionService(
         try {
             streamReceiver.start(config.port, surface)
         } catch (e: Exception) {
-            logger.error(TAG, "Failed to start stream receiver", e)
+            logger.error(
+                TAG,
+                "Failed to start stream receiver",
+                mapOf("error" to e.message, "exception" to e),
+            )
             mutableState.update { current ->
                 current.copy(
                     streamState = StreamState(
