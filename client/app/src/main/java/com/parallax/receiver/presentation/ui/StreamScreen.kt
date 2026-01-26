@@ -8,10 +8,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,11 +18,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -57,7 +55,6 @@ import com.parallax.receiver.core.config.SCALE_MIN
 import com.parallax.receiver.domain.model.StreamState
 import com.parallax.receiver.domain.model.UiState
 import com.parallax.receiver.presentation.theme.spacing
-import kotlinx.coroutines.delay
 import kotlin.math.min
 
 @Composable
@@ -74,14 +71,8 @@ fun StreamScreen(
 ) {
     val spacing = MaterialTheme.spacing
     val status = uiState.streamState.status
-    var isPanelVisible by remember { mutableStateOf(false) }
+    var isFullscreen by remember { mutableStateOf(false) }
     var hasSetInitialScale by remember { mutableStateOf(false) }
-    LaunchedEffect(isPanelVisible) {
-        if (isPanelVisible) {
-            delay(3500)
-            isPanelVisible = false
-        }
-    }
     Surface(
         modifier = modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
@@ -90,10 +81,28 @@ fun StreamScreen(
         Box(modifier = Modifier.fillMaxSize()) {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val density = LocalDensity.current
-                val fitScale = remember(maxWidth, maxHeight, density) {
+                val previewMaxWidth = maxWidth * 0.45f
+                val previewMaxHeight = maxHeight * 0.45f
+                val previewHeightFromWidth =
+                    previewMaxWidth * (DEFAULT_REMOTE_HEIGHT / DEFAULT_REMOTE_WIDTH)
+                val previewWidth =
+                    if (previewHeightFromWidth <= previewMaxHeight) {
+                        previewMaxWidth
+                    } else {
+                        previewMaxHeight * (DEFAULT_REMOTE_WIDTH / DEFAULT_REMOTE_HEIGHT)
+                    }
+                val previewHeight = previewWidth * (DEFAULT_REMOTE_HEIGHT / DEFAULT_REMOTE_WIDTH)
+                val availableWidth = if (isFullscreen) maxWidth else previewWidth
+                val availableHeight = if (isFullscreen) maxHeight else previewHeight
+                val fitScale = remember(
+                    availableWidth,
+                    availableHeight,
+                    density,
+                    isFullscreen,
+                ) {
                     with(density) {
-                        val maxWidthPx = maxWidth.toPx()
-                        val maxHeightPx = maxHeight.toPx()
+                        val maxWidthPx = availableWidth.toPx()
+                        val maxHeightPx = availableHeight.toPx()
                         if (maxWidthPx <= 0f || maxHeightPx <= 0f) {
                             Float.NaN
                         } else {
@@ -111,44 +120,46 @@ fun StreamScreen(
                         hasSetInitialScale = true
                     }
                 }
-
-                VideoArea(
-                    onSurfaceAvailable = onSurfaceAvailable,
-                    onSurfaceDestroyed = onSurfaceDestroyed,
-                    scale = uiState.config.scale,
-                    modifier = Modifier.fillMaxSize(),
-                )
+                Box(modifier = Modifier.fillMaxSize()) {
+                    val videoModifier = if (isFullscreen) {
+                        Modifier.fillMaxSize()
+                    } else {
+                        Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(spacing.medium)
+                            .width(previewWidth)
+                            .height(previewHeight)
+                    }
+                    VideoArea(
+                        onSurfaceAvailable = onSurfaceAvailable,
+                        onSurfaceDestroyed = onSurfaceDestroyed,
+                        scale = uiState.config.scale,
+                        modifier = videoModifier,
+                    )
+                }
             }
             IconButton(
-                onClick = { isPanelVisible = !isPanelVisible },
+                onClick = { isFullscreen = !isFullscreen },
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(spacing.medium),
+                    .padding(spacing.medium)
+                    .size(40.dp),
             ) {
                 Icon(
-                    imageVector = if (isPanelVisible) Icons.Default.Close else Icons.Default.Menu,
-                    contentDescription = if (isPanelVisible) {
-                        "Hide controls"
+                    imageVector = if (isFullscreen) {
+                        Icons.Default.FullscreenExit
                     } else {
-                        "Show controls"
+                        Icons.Default.Fullscreen
+                    },
+                    contentDescription = if (isFullscreen) {
+                        "Exit fullscreen"
+                    } else {
+                        "Enter fullscreen"
                     },
                 )
             }
-            if (isPanelVisible) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f))
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                        ) {
-                            isPanelVisible = false
-                        },
-                )
-            }
             AnimatedVisibility(
-                visible = isPanelVisible,
+                visible = !isFullscreen,
                 enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
                 exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut(),
                 modifier = Modifier.align(Alignment.CenterEnd),
