@@ -1,3 +1,0 @@
-/home/wilsonborba/Documents/Others/Asodya/parallax/client/build/CMakeFiles/parallax_client.dir
-/home/wilsonborba/Documents/Others/Asodya/parallax/client/build/CMakeFiles/edit_cache.dir
-/home/wilsonborba/Documents/Others/Asodya/parallax/client/build/CMakeFiles/rebuild_cache.dir
