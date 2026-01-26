@@ -17,6 +17,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.parallax.receiver.dal.local.SharedPreferencesSettingsStore
 import com.parallax.receiver.domain.module.SetScaleUseCase
+import com.parallax.receiver.domain.module.SetStreamEndpointUseCase
 import com.parallax.receiver.domain.module.StartStreamUseCase
 import com.parallax.receiver.domain.module.StopStreamUseCase
 import com.parallax.receiver.domain.service.StreamSessionService
@@ -44,6 +45,8 @@ class MainActivity : ComponentActivity() {
                         onStartClicked = streamViewModel::onStartClicked,
                         onStopClicked = streamViewModel::onStopClicked,
                         onScaleChanged = streamViewModel::onScaleChanged,
+                        onHostChanged = streamViewModel::onHostChanged,
+                        onPortChanged = streamViewModel::onPortChanged,
                         onSurfaceAvailable = streamViewModel::onSurfaceAvailable,
                         onSurfaceDestroyed = streamViewModel::onSurfaceDestroyed,
                     )
@@ -64,12 +67,14 @@ private class StreamViewModelFactory(
             val startStreamUseCase = StartStreamUseCase(streamSessionService)
             val stopStreamUseCase = StopStreamUseCase(streamSessionService)
             val setScaleUseCase = SetScaleUseCase(settingsStore, streamSessionService)
+            val setStreamEndpointUseCase = SetStreamEndpointUseCase(settingsStore, streamSessionService)
             @Suppress("UNCHECKED_CAST")
             return StreamViewModel(
                 streamSessionService = streamSessionService,
                 startStream = startStreamUseCase,
                 stopStream = stopStreamUseCase,
                 setScale = setScaleUseCase,
+                setStreamEndpoint = setStreamEndpointUseCase,
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")

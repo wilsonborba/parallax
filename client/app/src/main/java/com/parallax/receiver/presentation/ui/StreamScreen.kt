@@ -18,15 +18,21 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardOptions
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.parallax.receiver.core.config.DEFAULT_REMOTE_HEIGHT
@@ -43,6 +49,8 @@ fun StreamScreen(
     onStartClicked: () -> Unit,
     onStopClicked: () -> Unit,
     onScaleChanged: (Float) -> Unit,
+    onHostChanged: (String) -> Unit,
+    onPortChanged: (Int) -> Unit,
     onSurfaceAvailable: (Surface) -> Unit,
     onSurfaceDestroyed: () -> Unit,
     remoteWidth: Int = DEFAULT_REMOTE_WIDTH,
@@ -66,6 +74,13 @@ fun StreamScreen(
                 text = "Parallax Stream",
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onBackground,
+            )
+            ConnectionSettings(
+                host = uiState.config.host,
+                port = uiState.config.port,
+                enabled = status == StreamState.Status.Idle || status == StreamState.Status.Error,
+                onHostChanged = onHostChanged,
+                onPortChanged = onPortChanged,
             )
             when (status) {
                 StreamState.Status.Idle -> {
@@ -123,6 +138,58 @@ fun StreamScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ConnectionSettings(
+    host: String,
+    port: Int,
+    enabled: Boolean,
+    onHostChanged: (String) -> Unit,
+    onPortChanged: (Int) -> Unit,
+) {
+    val spacing = MaterialTheme.spacing
+    var hostText by remember(host) { mutableStateOf(host) }
+    var portText by remember(port) { mutableStateOf(port.toString()) }
+    val portValue = portText.toIntOrNull()
+    Column(verticalArrangement = Arrangement.spacedBy(spacing.small)) {
+        Text(
+            text = "Sender connection",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        OutlinedTextField(
+            value = hostText,
+            onValueChange = { value ->
+                hostText = value
+                onHostChanged(value)
+            },
+            label = { Text("Sender IP / host") },
+            singleLine = true,
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = portText,
+            onValueChange = { value ->
+                portText = value
+                value.toIntOrNull()?.let(onPortChanged)
+            },
+            label = { Text("Port") },
+            singleLine = true,
+            enabled = enabled,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            isError = portValue == null,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (portValue == null) {
+            Text(
+                text = "Port must be a number.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
         }
     }
 }

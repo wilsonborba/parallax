@@ -9,6 +9,7 @@ import com.parallax.receiver.domain.model.StreamState
 import com.parallax.receiver.domain.model.UiState
 import com.parallax.receiver.domain.service.StreamSessionService
 import com.parallax.receiver.domain.module.SetScaleUseCase
+import com.parallax.receiver.domain.module.SetStreamEndpointUseCase
 import com.parallax.receiver.domain.module.StartStreamUseCase
 import com.parallax.receiver.domain.module.StopStreamUseCase
 import kotlinx.coroutines.flow.StateFlow
@@ -19,6 +20,7 @@ class StreamViewModel(
     private val startStream: StartStreamUseCase,
     private val stopStream: StopStreamUseCase,
     private val setScale: SetScaleUseCase,
+    private val setStreamEndpoint: SetStreamEndpointUseCase,
     private val logger: Logger = LoggerProvider.logger,
 ) : ViewModel() {
     val uiState: StateFlow<UiState> = streamSessionService.uiState
@@ -38,6 +40,14 @@ class StreamViewModel(
 
     fun onScaleChanged(scale: Float) {
         setScale.invoke(scale)
+    }
+
+    fun onHostChanged(host: String) {
+        setStreamEndpoint.setHost(host)
+    }
+
+    fun onPortChanged(port: Int) {
+        setStreamEndpoint.setPort(port)
     }
 
     fun onSurfaceAvailable(surface: Surface) {
