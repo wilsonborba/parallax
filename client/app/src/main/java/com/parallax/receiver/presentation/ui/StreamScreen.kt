@@ -93,6 +93,14 @@ fun StreamScreen(
                 }
 
                 StreamState.Status.Connecting -> {
+                    VideoArea(
+                        remoteWidth = remoteWidth,
+                        remoteHeight = remoteHeight,
+                        scale = uiState.config.scale,
+                        onScaleChanged = onScaleChanged,
+                        onSurfaceAvailable = onSurfaceAvailable,
+                        onSurfaceDestroyed = onSurfaceDestroyed,
+                    )
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(spacing.small),
