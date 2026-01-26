@@ -3,11 +3,6 @@ package com.parallax.receiver.presentation.ui
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -20,15 +15,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -36,11 +26,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -48,7 +36,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.viewinterop.AndroidView
 import com.parallax.receiver.core.config.DEFAULT_REMOTE_HEIGHT
 import com.parallax.receiver.core.config.DEFAULT_REMOTE_WIDTH
@@ -57,7 +44,6 @@ import com.parallax.receiver.core.config.SCALE_MIN
 import com.parallax.receiver.domain.model.StreamState
 import com.parallax.receiver.domain.model.UiState
 import com.parallax.receiver.presentation.theme.spacing
-import kotlin.math.min
 
 @Composable
 fun StreamScreen(
@@ -81,7 +67,7 @@ fun StreamScreen(
         tonalElevation = 0.dp,
     ) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-            val aspectRatio = remoteWidth.toFloat() / remoteHeight.toFloat()
+            val aspectRatio = DEFAULT_REMOTE_WIDTH.toFloat() / DEFAULT_REMOTE_HEIGHT.toFloat()
             var baseWidth = maxWidth
             var baseHeight = maxWidth / aspectRatio
             if (baseHeight > maxHeight) {
@@ -448,172 +434,6 @@ fun VideoArea(
                                     currentOnSurfaceDestroyed()
                                 }
                             },
-                        )
-                    }
-                },
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
-    }
-}
-
-@Composable
-fun VideoArea(
-    baseWidth: Dp,
-    baseHeight: Dp,
-    scale: Float,
-    onSurfaceAvailable: (Surface) -> Unit,
-    onSurfaceDestroyed: () -> Unit,
-    scale: Float,
-    modifier: Modifier = Modifier,
-) {
-    val currentOnSurfaceAvailable by rememberUpdatedState(onSurfaceAvailable)
-    val currentOnSurfaceDestroyed by rememberUpdatedState(onSurfaceDestroyed)
-    Box(
-        modifier = modifier,
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = color,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-        )
-    }
-}
-
-@Composable
-private fun DebugPanel(
-    uiState: UiState,
-    onClose: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val spacing = MaterialTheme.spacing
-    Surface(
-        modifier = modifier,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-        shape = MaterialTheme.shapes.medium,
-        tonalElevation = 2.dp,
-        shadowElevation = 4.dp,
-    ) {
-        Column(
-            modifier = Modifier
-                .width(baseWidth)
-                .height(baseHeight)
-                .graphicsLayer(scaleX = scale, scaleY = scale)
-                .border(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.outline,
-                    shape = MaterialTheme.shapes.medium,
-                ),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            shape = MaterialTheme.shapes.medium,
-            tonalElevation = 0.dp,
-            shadowElevation = 0.dp,
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    text = "Debug panel",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                IconButton(onClick = onClose, modifier = Modifier.size(24.dp)) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Close debug panel",
-                    )
-                }
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    text = "Status: ${uiState.streamState.status}",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                Text(
-                    text = "Endpoint: ${uiState.config.host}:${uiState.config.port}",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                Text(
-                    text = "Scale: ${String.format("%.2f", uiState.config.scale)}x",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                if (uiState.streamState.message != null) {
-                    Text(
-                        text = "Message: ${uiState.streamState.message}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ControlPanel(
-    uiState: UiState,
-    status: StreamState.Status,
-    onStartClicked: () -> Unit,
-    onStopClicked: () -> Unit,
-    onScaleChanged: (Float) -> Unit,
-    onHostChanged: (String) -> Unit,
-    onPortChanged: (Int) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val spacing = MaterialTheme.spacing
-    Surface(
-        modifier = modifier.fillMaxHeight(),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 4.dp,
-        shadowElevation = 6.dp,
-        shape = MaterialTheme.shapes.large,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(spacing.large),
-            verticalArrangement = Arrangement.spacedBy(spacing.large),
-        ) {
-            Text(
-                text = "Stream controls",
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            ConnectionSettings(
-                host = uiState.config.host,
-                port = uiState.config.port,
-                enabled = status == StreamState.Status.Idle || status == StreamState.Status.Error,
-                onHostChanged = onHostChanged,
-                onPortChanged = onPortChanged,
-            )
-            when (status) {
-                StreamState.Status.Idle -> {
-                    Text(
-                        text = "Ready to connect to ${uiState.config.host}:${uiState.config.port}.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    FilledTonalButton(onClick = onStartClicked) {
-                        Text("Start stream")
-                    }
-                }
-
-                StreamState.Status.Connecting -> {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(spacing.small),
-                    ) {
-                        CircularProgressIndicator(
-                            color = MaterialTheme.colorScheme.primary,
-                            strokeWidth = 2.dp,
-                        )
-                        Text(
-                            text = "Connecting... (simulated delay)",
-                            style = MaterialTheme.typography.bodyMedium,
                         )
                     }
                 },
