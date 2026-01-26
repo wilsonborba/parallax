@@ -1,5 +1,6 @@
 package com.parallax.receiver.presentation.vm
 
+import android.view.Surface
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.parallax.receiver.core.logging.Logger
@@ -37,6 +38,14 @@ class StreamViewModel(
 
     fun onScaleChanged(scale: Float) {
         setScale.invoke(scale)
+    }
+
+    fun onSurfaceAvailable(surface: Surface) {
+        streamSessionService.setRenderSurface(surface)
+    }
+
+    fun onSurfaceDestroyed() {
+        streamSessionService.clearRenderSurface()
     }
 
     private fun observeStateTransitions() {

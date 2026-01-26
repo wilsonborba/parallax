@@ -1,8 +1,10 @@
 package com.parallax.receiver.presentation.ui
 
+import android.view.Surface
+import android.view.SurfaceHolder
+import android.view.SurfaceView
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,10 +22,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.parallax.receiver.core.config.DEFAULT_REMOTE_HEIGHT
 import com.parallax.receiver.core.config.DEFAULT_REMOTE_WIDTH
 import com.parallax.receiver.core.config.SCALE_MAX
@@ -38,6 +43,8 @@ fun StreamScreen(
     onStartClicked: () -> Unit,
     onStopClicked: () -> Unit,
     onScaleChanged: (Float) -> Unit,
+    onSurfaceAvailable: (Surface) -> Unit,
+    onSurfaceDestroyed: () -> Unit,
     remoteWidth: Int = DEFAULT_REMOTE_WIDTH,
     remoteHeight: Int = DEFAULT_REMOTE_HEIGHT,
     modifier: Modifier = Modifier,
@@ -97,6 +104,8 @@ fun StreamScreen(
                         remoteHeight = remoteHeight,
                         scale = uiState.config.scale,
                         onScaleChanged = onScaleChanged,
+                        onSurfaceAvailable = onSurfaceAvailable,
+                        onSurfaceDestroyed = onSurfaceDestroyed,
                     )
                     OutlinedButton(onClick = onStopClicked) {
                         Text("Stop stream")
@@ -124,9 +133,13 @@ fun VideoArea(
     remoteHeight: Int,
     scale: Float,
     onScaleChanged: (Float) -> Unit,
+    onSurfaceAvailable: (Surface) -> Unit,
+    onSurfaceDestroyed: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val spacing = MaterialTheme.spacing
+    val currentOnSurfaceAvailable by rememberUpdatedState(onSurfaceAvailable)
+    val currentOnSurfaceDestroyed by rememberUpdatedState(onSurfaceDestroyed)
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(spacing.medium),
@@ -145,14 +158,31 @@ fun VideoArea(
             tonalElevation = 0.dp,
             shadowElevation = 0.dp,
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                Text(
-                    text = "Video feed",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                )
-            }
+            AndroidView(
+                factory = { context ->
+                    SurfaceView(context).apply {
+                        holder.addCallback(
+                            object : SurfaceHolder.Callback {
+                                override fun surfaceCreated(holder: SurfaceHolder) {
+                                    currentOnSurfaceAvailable(holder.surface)
+                                }
+
+                                override fun surfaceChanged(
+                                    holder: SurfaceHolder,
+                                    format: Int,
+                                    width: Int,
+                                    height: Int,
+                                ) = Unit
+
+                                override fun surfaceDestroyed(holder: SurfaceHolder) {
+                                    currentOnSurfaceDestroyed()
+                                }
+                            },
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
         }
         Text(
             text = "Scale: ${String.format("%.2f", scale)}x",
@@ -189,6 +219,12 @@ fun VideoArea(
             text = "Adjust scale between ${SCALE_MIN}x and ${SCALE_MAX}x.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = "Rendering via SurfaceView.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
         )
     }
 }

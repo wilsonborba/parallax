@@ -44,6 +44,8 @@ class MainActivity : ComponentActivity() {
                         onStartClicked = streamViewModel::onStartClicked,
                         onStopClicked = streamViewModel::onStopClicked,
                         onScaleChanged = streamViewModel::onScaleChanged,
+                        onSurfaceAvailable = streamViewModel::onSurfaceAvailable,
+                        onSurfaceDestroyed = streamViewModel::onSurfaceDestroyed,
                     )
                 }
             }
