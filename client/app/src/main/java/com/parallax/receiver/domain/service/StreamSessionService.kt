@@ -39,11 +39,13 @@ class StreamSessionService(
     )
     private var connectionJob: Job? = null
     private var renderSurface: Surface? = null
+    private var pendingStartConfig: StreamConfig? = null
 
     val uiState: StateFlow<UiState> = mutableState.asStateFlow()
 
     fun startStream(config: StreamConfig) {
         connectionJob?.cancel()
+        pendingStartConfig = config
         mutableState.value = UiState(
             config = config,
             streamState = StreamState(StreamState.Status.Connecting),
@@ -51,24 +53,16 @@ class StreamSessionService(
         connectionJob = coroutineScope.launch {
             delay(connectionDelayMillis)
             val surface = renderSurface
-            mutableState.update { current ->
-                if (current.streamState.status == StreamState.Status.Connecting) {
-                    if (surface == null) {
-                        current.copy(
-                            streamState = StreamState(
-                                StreamState.Status.Error,
-                                "No render surface available.",
-                            ),
-                        )
-                    } else {
-                        current.copy(streamState = StreamState(StreamState.Status.Streaming))
-                    }
-                } else {
-                    current
-                }
-            }
-            if (surface != null && mutableState.value.streamState.status == StreamState.Status.Streaming) {
+            if (surface != null && mutableState.value.streamState.status == StreamState.Status.Connecting) {
                 startReceiver(config, surface)
+                pendingStartConfig = null
+                mutableState.update { current ->
+                    if (current.streamState.status == StreamState.Status.Connecting) {
+                        current.copy(streamState = StreamState(StreamState.Status.Streaming))
+                    } else {
+                        current
+                    }
+                }
             }
         }
     }
@@ -76,6 +70,7 @@ class StreamSessionService(
     fun stopStream() {
         connectionJob?.cancel()
         streamReceiver.stop()
+        pendingStartConfig = null
         mutableState.update { current ->
             current.copy(streamState = StreamState(StreamState.Status.Idle))
         }
@@ -83,8 +78,19 @@ class StreamSessionService(
 
     fun setRenderSurface(surface: Surface) {
         renderSurface = surface
-        if (mutableState.value.streamState.status == StreamState.Status.Streaming && !streamReceiver.isRunning()) {
-            startReceiver(mutableState.value.config, surface)
+        if (!streamReceiver.isRunning()) {
+            val config = pendingStartConfig ?: mutableState.value.config
+            if (mutableState.value.streamState.status != StreamState.Status.Idle) {
+                startReceiver(config, surface)
+                pendingStartConfig = null
+                mutableState.update { current ->
+                    if (current.streamState.status == StreamState.Status.Connecting) {
+                        current.copy(streamState = StreamState(StreamState.Status.Streaming))
+                    } else {
+                        current
+                    }
+                }
+            }
         }
     }
 
@@ -115,7 +121,11 @@ class StreamSessionService(
         try {
             streamReceiver.start(config.port, surface)
         } catch (e: Exception) {
-            logger.error(TAG, "Failed to start stream receiver", e)
+            logger.error(
+                TAG,
+                "Failed to start stream receiver",
+                mapOf("error" to e.message, "exception" to e),
+            )
             mutableState.update { current ->
                 current.copy(
                     streamState = StreamState(
