@@ -1,6 +1,6 @@
 package com.parallax.receiver.presentation.ui
 
-import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,15 +12,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.parallax.receiver.core.config.DEFAULT_REMOTE_HEIGHT
 import com.parallax.receiver.core.config.DEFAULT_REMOTE_WIDTH
@@ -28,6 +30,7 @@ import com.parallax.receiver.core.config.SCALE_MAX
 import com.parallax.receiver.core.config.SCALE_MIN
 import com.parallax.receiver.domain.model.StreamState
 import com.parallax.receiver.domain.model.UiState
+import com.parallax.receiver.presentation.theme.spacing
 
 @Composable
 fun StreamScreen(
@@ -39,54 +42,76 @@ fun StreamScreen(
     remoteHeight: Int = DEFAULT_REMOTE_HEIGHT,
     modifier: Modifier = Modifier,
 ) {
+    val spacing = MaterialTheme.spacing
     val status = uiState.streamState.status
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
+    Surface(
+        modifier = modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
+        tonalElevation = 0.dp,
     ) {
-        Text(
-            text = "Parallax Stream",
-            style = MaterialTheme.typography.headlineSmall,
-        )
-        when (status) {
-            StreamState.Status.Idle -> {
-                Text("Ready to connect to ${uiState.config.host}:${uiState.config.port}.")
-                Button(onClick = onStartClicked) {
-                    Text("Start stream")
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(spacing.extraLarge),
+            verticalArrangement = Arrangement.spacedBy(spacing.large),
+        ) {
+            Text(
+                text = "Parallax Stream",
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            when (status) {
+                StreamState.Status.Idle -> {
+                    Text(
+                        text = "Ready to connect to ${uiState.config.host}:${uiState.config.port}.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    FilledTonalButton(onClick = onStartClicked) {
+                        Text("Start stream")
+                    }
                 }
-            }
 
-            StreamState.Status.Connecting -> {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    CircularProgressIndicator()
-                    Text("Connecting... (simulated delay)")
+                StreamState.Status.Connecting -> {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(spacing.small),
+                    ) {
+                        CircularProgressIndicator(
+                            color = MaterialTheme.colorScheme.primary,
+                            strokeWidth = 2.dp,
+                        )
+                        Text(
+                            text = "Connecting... (simulated delay)",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    OutlinedButton(onClick = onStopClicked) {
+                        Text("Cancel")
+                    }
                 }
-                Button(onClick = onStopClicked) {
-                    Text("Cancel")
-                }
-            }
 
-            StreamState.Status.Streaming -> {
-                VideoArea(
-                    remoteWidth = remoteWidth,
-                    remoteHeight = remoteHeight,
-                    scale = uiState.config.scale,
-                    onScaleChanged = onScaleChanged,
-                )
-                Button(onClick = onStopClicked) {
-                    Text("Stop stream")
+                StreamState.Status.Streaming -> {
+                    VideoArea(
+                        remoteWidth = remoteWidth,
+                        remoteHeight = remoteHeight,
+                        scale = uiState.config.scale,
+                        onScaleChanged = onScaleChanged,
+                    )
+                    OutlinedButton(onClick = onStopClicked) {
+                        Text("Stop stream")
+                    }
                 }
-            }
 
-            StreamState.Status.Error -> {
-                Text("Stream error: ${uiState.streamState.message ?: "Unknown"}")
-                Button(onClick = onStartClicked) {
-                    Text("Retry")
+                StreamState.Status.Error -> {
+                    Text(
+                        text = "Stream error: ${uiState.streamState.message ?: "Unknown"}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    FilledTonalButton(onClick = onStartClicked) {
+                        Text("Retry")
+                    }
                 }
             }
         }
@@ -101,39 +126,57 @@ fun VideoArea(
     onScaleChanged: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val spacing = MaterialTheme.spacing
     Column(
         modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(spacing.medium),
     ) {
-        Box(
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(remoteWidth.toFloat() / remoteHeight.toFloat())
-                .background(Color.DarkGray),
-            contentAlignment = Alignment.Center,
+                .border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.outline,
+                    shape = MaterialTheme.shapes.medium,
+                ),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = MaterialTheme.shapes.medium,
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
         ) {
-            Text("Video feed", color = Color.White)
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    text = "Video feed",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
-        Text("Scale: ${String.format("%.2f", scale)}x")
+        Text(
+            text = "Scale: ${String.format("%.2f", scale)}x",
+            style = MaterialTheme.typography.titleLarge,
+        )
         Row(
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Button(
+            OutlinedButton(
                 onClick = {
                     onScaleChanged((scale - 0.1f).coerceAtLeast(SCALE_MIN))
                 },
             ) {
                 Text("-")
             }
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(spacing.small))
             Slider(
                 value = scale,
                 onValueChange = onScaleChanged,
                 valueRange = SCALE_MIN..SCALE_MAX,
                 modifier = Modifier.weight(1f),
             )
-            Spacer(modifier = Modifier.width(12.dp))
-            Button(
+            Spacer(modifier = Modifier.width(spacing.small))
+            OutlinedButton(
                 onClick = {
                     onScaleChanged((scale + 0.1f).coerceAtMost(SCALE_MAX))
                 },
@@ -141,7 +184,11 @@ fun VideoArea(
                 Text("+")
             }
         }
-        Spacer(modifier = Modifier.height(8.dp))
-        Text("Adjust scale between ${SCALE_MIN}x and ${SCALE_MAX}x.")
+        Spacer(modifier = Modifier.height(spacing.extraSmall))
+        Text(
+            text = "Adjust scale between ${SCALE_MIN}x and ${SCALE_MAX}x.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
