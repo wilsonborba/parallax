@@ -26,8 +26,8 @@ class StreamSessionService(
     private val streamReceiver: H264StreamReceiver = H264StreamReceiver(),
     private val logger: Logger = LoggerProvider.logger,
     initialConfig: StreamConfig = StreamConfig(
-        host = "0.0.0.0",
-        port = 7777,
+        host = settingsStore.getHost(),
+        port = settingsStore.getPort(),
         scale = settingsStore.getScale(),
     ),
 ) {
@@ -96,6 +96,18 @@ class StreamSessionService(
     fun setScale(scale: Float) {
         mutableState.update { current ->
             current.copy(config = current.config.copy(scale = scale))
+        }
+    }
+
+    fun setHost(host: String) {
+        mutableState.update { current ->
+            current.copy(config = current.config.copy(host = host))
+        }
+    }
+
+    fun setPort(port: Int) {
+        mutableState.update { current ->
+            current.copy(config = current.config.copy(port = port))
         }
     }
 
