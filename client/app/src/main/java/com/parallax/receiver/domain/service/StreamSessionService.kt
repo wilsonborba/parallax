@@ -20,8 +20,8 @@ class StreamSessionService(
     private val connectionDelayMillis: Long = 750L,
     private val settingsStore: SettingsStore,
     initialConfig: StreamConfig = StreamConfig(
-        host = "127.0.0.1",
-        port = 5000,
+        host = "0.0.0.0",
+        port = 7777,
         scale = settingsStore.getScale(),
     ),
 ) {
