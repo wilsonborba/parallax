@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Menu
@@ -44,15 +45,20 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.viewinterop.AndroidView
+import com.parallax.receiver.core.config.DEFAULT_REMOTE_HEIGHT
+import com.parallax.receiver.core.config.DEFAULT_REMOTE_WIDTH
 import com.parallax.receiver.core.config.SCALE_MAX
 import com.parallax.receiver.core.config.SCALE_MIN
 import com.parallax.receiver.domain.model.StreamState
 import com.parallax.receiver.domain.model.UiState
 import com.parallax.receiver.presentation.theme.spacing
 import kotlinx.coroutines.delay
+import kotlin.math.min
 
 @Composable
 fun StreamScreen(
@@ -69,6 +75,7 @@ fun StreamScreen(
     val spacing = MaterialTheme.spacing
     val status = uiState.streamState.status
     var isPanelVisible by remember { mutableStateOf(false) }
+    var hasSetInitialScale by remember { mutableStateOf(false) }
     LaunchedEffect(isPanelVisible) {
         if (isPanelVisible) {
             delay(3500)
@@ -81,11 +88,37 @@ fun StreamScreen(
         tonalElevation = 0.dp,
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            VideoArea(
-                onSurfaceAvailable = onSurfaceAvailable,
-                onSurfaceDestroyed = onSurfaceDestroyed,
-                modifier = Modifier.fillMaxSize(),
-            )
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val density = LocalDensity.current
+                val fitScale = remember(maxWidth, maxHeight, density) {
+                    with(density) {
+                        val maxWidthPx = maxWidth.toPx()
+                        val maxHeightPx = maxHeight.toPx()
+                        if (maxWidthPx <= 0f || maxHeightPx <= 0f) {
+                            Float.NaN
+                        } else {
+                            min(
+                                maxWidthPx / DEFAULT_REMOTE_WIDTH,
+                                maxHeightPx / DEFAULT_REMOTE_HEIGHT,
+                            ).coerceIn(SCALE_MIN, SCALE_MAX)
+                        }
+                    }
+                }
+
+                LaunchedEffect(fitScale) {
+                    if (!hasSetInitialScale && fitScale.isFinite()) {
+                        onScaleChanged(fitScale)
+                        hasSetInitialScale = true
+                    }
+                }
+
+                VideoArea(
+                    onSurfaceAvailable = onSurfaceAvailable,
+                    onSurfaceDestroyed = onSurfaceDestroyed,
+                    scale = uiState.config.scale,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
             IconButton(
                 onClick = { isPanelVisible = !isPanelVisible },
                 modifier = Modifier
@@ -190,12 +223,14 @@ private fun ConnectionSettings(
 fun VideoArea(
     onSurfaceAvailable: (Surface) -> Unit,
     onSurfaceDestroyed: () -> Unit,
+    scale: Float,
     modifier: Modifier = Modifier,
 ) {
     val currentOnSurfaceAvailable by rememberUpdatedState(onSurfaceAvailable)
     val currentOnSurfaceDestroyed by rememberUpdatedState(onSurfaceDestroyed)
     Surface(
         modifier = modifier
+            .graphicsLayer(scaleX = scale, scaleY = scale)
             .border(
                 width = 1.dp,
                 color = MaterialTheme.colorScheme.outline,
