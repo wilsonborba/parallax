@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 libc = "0.2"
-x11 = { version = "2.21", features = ["xlib"] }
+x11 = { version = "2.21", features = ["xfixes", "xlib", "xrender"] }
 ffmpeg-next = { version = "8", default-features = false, features = [
   "codec",
   "format",
