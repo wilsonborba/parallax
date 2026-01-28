@@ -47,6 +47,9 @@ class H264StreamReceiver(
             var lastLogMs = System.currentTimeMillis()
             var loggedFirstPacket = false
             var loggedFirstFrame = false
+            var pendingConfig: ByteArray? = null
+            var configSent = false
+            var pendingFrame: FramePayload? = null
             val frameAssembler = FrameAssembler(logger)
             try {
                 socket = try {
@@ -75,28 +78,58 @@ class H264StreamReceiver(
                     mapOf("mimeType" to MIME_TYPE, "width" to width, "height" to height),
                 )
                 while (isActive) {
-                    socket?.receive(packet)
-                    if (!loggedFirstPacket) {
-                        logger.info(TAG, "First packet received", mapOf("bytes" to packet.length))
-                        loggedFirstPacket = true
+                    if (pendingFrame == null) {
+                        socket?.receive(packet)
+                        if (!loggedFirstPacket) {
+                            logger.info(TAG, "First packet received", mapOf("bytes" to packet.length))
+                            loggedFirstPacket = true
+                        }
+                        packetCount += 1
+                        val framePayload = frameAssembler.onPacket(packet.data, packet.length) ?: continue
+                        if ((framePayload.flags and FLAG_DISCONTINUITY) != 0) {
+                            pendingConfig = null
+                            configSent = false
+                        }
+                        if (framePayload.configData != null) {
+                            pendingConfig = framePayload.configData
+                            configSent = false
+                        }
+                        if ((framePayload.flags and FLAG_KEYFRAME) != 0 && pendingConfig != null) {
+                            configSent = false
+                        }
+                        pendingFrame = framePayload
                     }
-                    packetCount += 1
-                    val frameData = frameAssembler.onPacket(packet.data, packet.length) ?: continue
-                    val inputIndex = decoder.dequeueInputBuffer(TIMEOUT_US)
-                    if (inputIndex >= 0) {
-                        val inputBuffer = decoder.getInputBuffer(inputIndex)
-                        if (inputBuffer != null) {
-                            inputBuffer.clear()
-                            inputBuffer.put(frameData)
-                            decoder.queueInputBuffer(
-                                inputIndex,
-                                0,
-                                frameData.size,
-                                System.nanoTime() / 1_000L,
-                                0,
-                            )
-                        } else {
-                            decoder.queueInputBuffer(inputIndex, 0, 0, 0L, 0)
+                    val frameToSend = pendingFrame
+                    if (frameToSend != null) {
+                        val inputIndex = decoder.dequeueInputBuffer(TIMEOUT_US)
+                        if (inputIndex >= 0) {
+                            val inputBuffer = decoder.getInputBuffer(inputIndex)
+                            if (inputBuffer != null) {
+                                inputBuffer.clear()
+                                if (pendingConfig != null && !configSent) {
+                                    inputBuffer.put(pendingConfig)
+                                    decoder.queueInputBuffer(
+                                        inputIndex,
+                                        0,
+                                        pendingConfig.size,
+                                        System.nanoTime() / 1_000L,
+                                        MediaCodec.BUFFER_FLAG_CODEC_CONFIG,
+                                    )
+                                    configSent = true
+                                } else {
+                                    inputBuffer.put(frameToSend.data)
+                                    decoder.queueInputBuffer(
+                                        inputIndex,
+                                        0,
+                                        frameToSend.data.size,
+                                        System.nanoTime() / 1_000L,
+                                        0,
+                                    )
+                                    pendingFrame = null
+                                }
+                            } else {
+                                decoder.queueInputBuffer(inputIndex, 0, 0, 0L, 0)
+                            }
                         }
                     }
                     var outputIndex = decoder.dequeueOutputBuffer(bufferInfo, OUTPUT_TIMEOUT_US)
@@ -162,29 +195,60 @@ class H264StreamReceiver(
         private const val HEADER_LENGTH = 24
         private const val VERSION = 1
         private const val MAX_IN_FLIGHT_FRAMES = 60
+        private const val STREAM_ID = 1L
+        private const val PAYLOAD_TYPE_VIDEO = 0x01
+        private const val FLAG_KEYFRAME = 1 shl 0
+        private const val FLAG_CONFIG = 1 shl 1
+        private const val FLAG_DISCONTINUITY = 1 shl 3
+        private const val NAL_TYPE_SPS = 7
+        private const val NAL_TYPE_PPS = 8
     }
 
     private data class PacketHeader(
         val flags: Int,
+        val streamId: Long,
         val frameId: Long,
         val packetId: Int,
         val packetCount: Int,
+        val payloadType: Int,
         val payloadLength: Int,
     )
 
-    private class FrameAssembler(private val logger: Logger) {
+    private data class FramePayload(
+        val data: ByteArray,
+        val flags: Int,
+        val configData: ByteArray?,
+    )
+
+    private inner class FrameAssembler(private val logger: Logger) {
         private val frames = object : LinkedHashMap<Long, FrameAssembly>(MAX_IN_FLIGHT_FRAMES, 0.75f, true) {
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, FrameAssembly>?): Boolean {
                 return size > MAX_IN_FLIGHT_FRAMES
             }
         }
 
-        fun onPacket(bytes: ByteArray, length: Int): ByteArray? {
+        fun onPacket(bytes: ByteArray, length: Int): FramePayload? {
             if (length < HEADER_LENGTH) {
                 logger.warn(TAG, "Dropping packet: too small", mapOf("length" to length))
                 return null
             }
             val header = parseHeader(bytes) ?: return null
+            if (header.payloadType != PAYLOAD_TYPE_VIDEO) {
+                logger.warn(
+                    TAG,
+                    "Dropping packet: unexpected payload type",
+                    mapOf("payloadType" to header.payloadType),
+                )
+                return null
+            }
+            if (header.streamId != STREAM_ID) {
+                logger.warn(
+                    TAG,
+                    "Dropping packet: unexpected stream id",
+                    mapOf("streamId" to header.streamId),
+                )
+                return null
+            }
             if (header.payloadLength <= 0 || header.payloadLength > length - HEADER_LENGTH) {
                 logger.warn(
                     TAG,
@@ -194,9 +258,7 @@ class H264StreamReceiver(
                 return null
             }
             val payload = bytes.copyOfRange(HEADER_LENGTH, HEADER_LENGTH + header.payloadLength)
-            val assembly = frames.getOrPut(header.frameId) {
-                FrameAssembly(header.packetCount)
-            }
+            val assembly = frames.getOrPut(header.frameId) { FrameAssembly(header.packetCount) }
             if (header.packetId >= assembly.packetCount) {
                 logger.warn(
                     TAG,
@@ -205,10 +267,17 @@ class H264StreamReceiver(
                 )
                 return null
             }
+            assembly.flags = assembly.flags or header.flags
             assembly.packets[header.packetId] = payload
             if (assembly.isComplete()) {
                 frames.remove(header.frameId)
-                return assembly.assemble()
+                val data = assembly.assemble()
+                val configData = if (assembly.hasFlag(FLAG_CONFIG)) {
+                    extractConfigNalUnits(data)
+                } else {
+                    null
+                }
+                return FramePayload(data, assembly.flags, configData)
             }
             return null
         }
@@ -231,22 +300,26 @@ class H264StreamReceiver(
             }
             val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN)
             val flags = buffer.getShort(6).toInt() and 0xFFFF
+            val streamId = buffer.getInt(8).toLong() and 0xFFFF_FFFFL
             val frameId = buffer.getInt(12).toLong() and 0xFFFF_FFFFL
             val packetId = buffer.getShort(16).toInt() and 0xFFFF
             val packetCount = buffer.getShort(18).toInt() and 0xFFFF
+            val payloadType = bytes[20].toInt() and 0xFF
             val payloadLength = buffer.getShort(22).toInt() and 0xFFFF
             if (packetCount == 0) {
                 logger.warn(TAG, "Dropping packet: packetCount=0", emptyMap())
                 return null
             }
-            return PacketHeader(flags, frameId, packetId, packetCount, payloadLength)
+            return PacketHeader(flags, streamId, frameId, packetId, packetCount, payloadType, payloadLength)
         }
     }
 
     private class FrameAssembly(val packetCount: Int) {
         val packets: Array<ByteArray?> = arrayOfNulls(packetCount)
+        var flags: Int = 0
 
         fun isComplete(): Boolean = packets.all { it != null }
+        fun hasFlag(flag: Int): Boolean = (flags and flag) != 0
 
         fun assemble(): ByteArray {
             val totalSize = packets.sumOf { it?.size ?: 0 }
@@ -260,5 +333,53 @@ class H264StreamReceiver(
             }
             return output
         }
+    }
+
+    private fun extractConfigNalUnits(data: ByteArray): ByteArray? {
+        val configUnits = mutableListOf<ByteArray>()
+        var offset = 0
+        while (true) {
+            val start = findStartCode(data, offset) ?: break
+            val nalStart = start.codeStart + start.codeLength
+            if (nalStart >= data.size) {
+                break
+            }
+            val nalType = data[nalStart].toInt() and 0x1F
+            val next = findStartCode(data, nalStart)
+            val nalEnd = next?.codeStart ?: data.size
+            if (nalType == NAL_TYPE_SPS || nalType == NAL_TYPE_PPS) {
+                configUnits.add(data.copyOfRange(start.codeStart, nalEnd))
+            }
+            offset = nalStart + 1
+        }
+        if (configUnits.isEmpty()) {
+            return null
+        }
+        val totalSize = configUnits.sumOf { it.size }
+        val output = ByteArray(totalSize)
+        var offsetOut = 0
+        for (unit in configUnits) {
+            System.arraycopy(unit, 0, output, offsetOut, unit.size)
+            offsetOut += unit.size
+        }
+        return output
+    }
+
+    private data class StartCode(val codeStart: Int, val codeLength: Int)
+
+    private fun findStartCode(data: ByteArray, offset: Int): StartCode? {
+        var i = offset
+        while (i + 3 < data.size) {
+            if (data[i] == 0.toByte() && data[i + 1] == 0.toByte()) {
+                if (data[i + 2] == 1.toByte()) {
+                    return StartCode(codeStart = i, codeLength = 3)
+                }
+                if (data[i + 2] == 0.toByte() && data[i + 3] == 1.toByte()) {
+                    return StartCode(codeStart = i, codeLength = 4)
+                }
+            }
+            i += 1
+        }
+        return null
     }
 }
