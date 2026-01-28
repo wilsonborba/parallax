@@ -4,6 +4,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 use std::thread;
+use std::time::Duration;
 
 use crate::capture;
 use crate::control::protocol::{read_frame, write_frame};
@@ -51,6 +52,26 @@ impl StreamController {
             config,
         }
     }
+
+    fn shutdown(&self) -> Result<(), String> {
+        let handle = {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| "stream lock poisoned".to_string())?;
+            state.handle.take()
+        };
+
+        if let Some(handle) = handle {
+            handle.stop.store(true, Ordering::Relaxed);
+            handle
+                .join
+                .join()
+                .map_err(|_| "stream thread panicked".to_string())?;
+        }
+
+        Ok(())
+    }
 }
 
 impl StreamCoordinator for StreamController {
@@ -96,15 +117,26 @@ impl StreamCoordinator for StreamController {
 }
 
 pub fn run(config: ControlConfig) -> Result<(), String> {
+    let running = Arc::new(AtomicBool::new(true));
+    run_with_shutdown(config, running)
+}
+
+pub fn run_with_shutdown(
+    config: ControlConfig,
+    running: Arc<AtomicBool>,
+) -> Result<(), String> {
     let listener = TcpListener::bind(&config.control_bind)
         .map_err(|err| format!("Failed to bind control listener {}: {err}", config.control_bind))?;
+    listener
+        .set_nonblocking(true)
+        .map_err(|err| format!("Failed to set non-blocking mode: {err}"))?;
     println!("Control listener bound on {}", config.control_bind);
 
     let stream_controller = Arc::new(StreamController::new(config.stream.clone()));
 
-    for incoming in listener.incoming() {
-        match incoming {
-            Ok(stream) => {
+    while running.load(Ordering::Relaxed) {
+        match listener.accept() {
+            Ok((stream, _)) => {
                 let pairing_token = config.pairing_token.clone();
                 let stream_controller = Arc::clone(&stream_controller);
                 thread::spawn(move || {
@@ -113,12 +145,18 @@ pub fn run(config: ControlConfig) -> Result<(), String> {
                     }
                 });
             }
+            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                thread::sleep(Duration::from_millis(200));
+            }
             Err(err) => {
                 eprintln!("Control accept failed: {err}");
+                thread::sleep(Duration::from_millis(200));
             }
         }
     }
 
+    println!("Shutting down control server");
+    stream_controller.shutdown()?;
     Ok(())
 }
 

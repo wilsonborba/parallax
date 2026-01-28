@@ -1,0 +1,13 @@
+[Unit]
+Description=Parallax host streaming daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=%h/.cargo/bin/prlx-hostd --display :0 --bind 0.0.0.0:5000 --target 127.0.0.1:5000 --control-bind 0.0.0.0:7000 --pairing-token parallax
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=10s
+
+[Install]
+WantedBy=default.target
