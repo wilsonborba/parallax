@@ -1,6 +1,7 @@
 package com.parallax.receiver.domain.service
 
 import android.view.Surface
+import com.parallax.receiver.core.control.ControlClient
 import com.parallax.receiver.core.logging.Logger
 import com.parallax.receiver.core.logging.LoggerProvider
 import com.parallax.receiver.core.streaming.H264StreamReceiver
@@ -24,6 +25,7 @@ class StreamSessionService(
     private val connectionDelayMillis: Long = 750L,
     private val settingsStore: SettingsStore,
     private val streamReceiver: H264StreamReceiver = H264StreamReceiver(),
+    private val controlClient: ControlClient = ControlClient(),
     private val logger: Logger = LoggerProvider.logger,
     initialConfig: StreamConfig = StreamConfig(
         host = settingsStore.getHost(),
@@ -40,6 +42,7 @@ class StreamSessionService(
     private var connectionJob: Job? = null
     private var renderSurface: Surface? = null
     private var pendingStartConfig: StreamConfig? = null
+    private var controlSession: ControlClient.ControlSession? = null
 
     val uiState: StateFlow<UiState> = mutableState.asStateFlow()
 
@@ -54,6 +57,10 @@ class StreamSessionService(
             delay(connectionDelayMillis)
             val surface = renderSurface
             if (surface != null && mutableState.value.streamState.status == StreamState.Status.Connecting) {
+                val sessionReady = openControlSession(config)
+                if (!sessionReady) {
+                    return@launch
+                }
                 startReceiver(config, surface)
                 pendingStartConfig = null
                 mutableState.update { current ->
@@ -70,6 +77,7 @@ class StreamSessionService(
     fun stopStream() {
         connectionJob?.cancel()
         streamReceiver.stop()
+        stopControlSession()
         pendingStartConfig = null
         mutableState.update { current ->
             current.copy(streamState = StreamState(StreamState.Status.Idle))
@@ -81,6 +89,10 @@ class StreamSessionService(
         if (!streamReceiver.isRunning()) {
             val config = pendingStartConfig ?: mutableState.value.config
             if (mutableState.value.streamState.status != StreamState.Status.Idle) {
+                val sessionReady = openControlSession(config)
+                if (!sessionReady) {
+                    return
+                }
                 startReceiver(config, surface)
                 pendingStartConfig = null
                 mutableState.update { current ->
@@ -97,6 +109,7 @@ class StreamSessionService(
     fun clearRenderSurface() {
         renderSurface = null
         streamReceiver.stop()
+        stopControlSession()
     }
 
     fun setScale(scale: Float) {
@@ -137,7 +150,47 @@ class StreamSessionService(
         }
     }
 
+    private fun openControlSession(config: StreamConfig): Boolean {
+        if (controlSession != null) {
+            return true
+        }
+        return try {
+            val session = controlClient.openSession(config.host, config.port + CONTROL_PORT_OFFSET)
+            session.startStream()
+            controlSession = session
+            true
+        } catch (e: Exception) {
+            logger.error(
+                TAG,
+                "Failed to open control session",
+                mapOf("error" to e.message, "exception" to e),
+            )
+            mutableState.update { current ->
+                current.copy(
+                    streamState = StreamState(
+                        StreamState.Status.Error,
+                        e.message ?: "Failed to open control session.",
+                    ),
+                )
+            }
+            false
+        }
+    }
+
+    private fun stopControlSession() {
+        val session = controlSession ?: return
+        controlSession = null
+        try {
+            session.stopStream()
+        } catch (e: Exception) {
+            logger.warn(TAG, "Failed to stop control session", mapOf("error" to e.message, "exception" to e))
+        } finally {
+            session.close()
+        }
+    }
+
     private companion object {
         private const val TAG = "StreamSessionService"
+        private const val CONTROL_PORT_OFFSET = 2000
     }
 }
