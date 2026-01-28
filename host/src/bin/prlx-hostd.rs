@@ -1,3 +1,8 @@
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+
 use host::cli::CliConfig;
 use host::control;
 
@@ -10,7 +15,15 @@ fn main() {
         }
     };
 
-    println!("Starting host control daemon with config: {config:?}");
+    println!("Starting prlx-hostd with config: {config:?}");
+
+    let running = Arc::new(AtomicBool::new(true));
+    let handler_flag = Arc::clone(&running);
+    if let Err(err) = ctrlc::set_handler(move || {
+        handler_flag.store(false, Ordering::Relaxed);
+    }) {
+        eprintln!("Failed to install signal handler: {err}");
+    }
 
     let control_config = control::server::ControlConfig {
         control_bind: config.control_bind.clone(),
@@ -23,7 +36,7 @@ fn main() {
         },
     };
 
-    if let Err(error) = control::server::run(control_config) {
+    if let Err(error) = control::server::run_with_shutdown(control_config, running) {
         eprintln!("Control server error: {error}");
     }
 }
