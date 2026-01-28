@@ -17,7 +17,7 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Parallax Host UI",
         native_options,
-        Box::new(|cc| Ok(Box::new(HostUiApp::new(cc, socket_path)))),
+        Box::new(|cc| Box::new(HostUiApp::new(cc, socket_path))),
     )
 }
 
@@ -119,7 +119,7 @@ impl HostUiApp {
             qr_texture: None,
             qr_payload: None,
         };
-        app.refresh_qr_texture(cc.egui_ctx);
+        app.refresh_qr_texture(&cc.egui_ctx);
         app.daemon.send(DaemonCommand::Refresh);
         app
     }
@@ -214,7 +214,7 @@ impl eframe::App for HostUiApp {
                 ui.label("Pairing QR");
                 if let Some(texture) = &self.qr_texture {
                     let size = texture.size_vec2();
-                    ui.image(texture, size);
+                    ui.image((texture.id(), size));
                 } else {
                     ui.label("No QR payload from daemon.");
                 }
@@ -399,7 +399,7 @@ fn qr_to_image(payload: &str, scale: usize) -> Option<ColorImage> {
 
     for y in 0..width {
         for x in 0..width {
-            let color = if code[(x, y)] {
+            let color = if code[(x, y)] == qrcode::Color::Dark {
                 Color32::BLACK
             } else {
                 Color32::WHITE
