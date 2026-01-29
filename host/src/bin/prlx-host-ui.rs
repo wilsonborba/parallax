@@ -21,6 +21,9 @@ const EXTERNAL_DAEMON_RETRY_DELAY: Duration = Duration::from_secs(15);
 static CHILD_PID: AtomicI32 = AtomicI32::new(0);
 static CTRL_C_HANDLER: Once = Once::new();
 
+static CHILD_PID: AtomicI32 = AtomicI32::new(0);
+static CTRL_C_HANDLER: Once = Once::new();
+
 fn main() -> eframe::Result<()> {
     let socket_path = expand_path(DEFAULT_SOCKET_PATH);
     let native_options = eframe::NativeOptions::default();
@@ -120,18 +123,6 @@ impl DaemonHandle {
 
     fn command_sender(&self) -> Sender<DaemonCommand> {
         self.command_tx.clone()
-    }
-}
-
-impl Drop for DaemonHandle {
-    fn drop(&mut self) {
-        let _ = self.command_tx.send(DaemonCommand::Shutdown);
-    }
-}
-
-impl Drop for DaemonHandle {
-    fn drop(&mut self) {
-        let _ = self.command_tx.send(DaemonCommand::Shutdown);
     }
 }
 
@@ -299,6 +290,12 @@ impl eframe::App for HostUiApp {
     }
 }
 
+impl Drop for HostUiApp {
+    fn drop(&mut self) {
+        self.daemon.send(DaemonCommand::Shutdown);
+    }
+}
+
 struct DaemonClient {
     socket_path: PathBuf,
     event_tx: Sender<DaemonEvent>,
@@ -306,7 +303,7 @@ struct DaemonClient {
     last_connect_attempt: Instant,
     last_spawn_attempt: Instant,
     last_spawn_success: Option<Instant>,
-    spawn_suppressed_until: Option<Instant>,
+    warning_sent: bool,
     status: DaemonStatus,
     writer: Option<UnixStream>,
     reader: Option<BufReader<UnixStream>>,
@@ -322,7 +319,7 @@ impl DaemonClient {
             last_connect_attempt: Instant::now() - RECONNECT_INTERVAL,
             last_spawn_attempt: Instant::now() - SPAWN_INTERVAL,
             last_spawn_success: None,
-            spawn_suppressed_until: None,
+            warning_sent: false,
             status: DaemonStatus::default(),
             writer: None,
             reader: None,
@@ -376,6 +373,7 @@ impl DaemonClient {
                     Ok(reader_stream) => {
                         self.reader = Some(BufReader::new(reader_stream));
                         self.writer = Some(stream);
+                        self.warning_sent = false;
                         let _ = self.event_tx.send(DaemonEvent::Status(self.status.clone()));
                     }
                     Err(err) => {
@@ -388,9 +386,12 @@ impl DaemonClient {
             Err(err) => {
                 self.ensure_daemon_spawn();
                 if err.kind() != std::io::ErrorKind::NotFound || self.socket_path.exists() {
-                    let _ = self
-                        .event_tx
-                        .send(DaemonEvent::Error(format!("Failed to connect: {err}")));
+                    if !self.warning_sent {
+                        let _ = self
+                            .event_tx
+                            .send(DaemonEvent::Error(format!("Failed to connect: {err}")));
+                        self.warning_sent = true;
+                    }
                 }
             }
         }
@@ -531,6 +532,7 @@ impl DaemonClient {
             self.spawned_child = None;
             CHILD_PID.store(0, Ordering::Relaxed);
         }
+        true
     }
 
     fn shutdown_child(&mut self) {
