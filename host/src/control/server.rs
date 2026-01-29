@@ -9,8 +9,6 @@ use std::sync::{
 use std::thread;
 use std::time::Duration;
 
-use rand::Rng;
-
 use crate::capture;
 use crate::control::protocol::{read_frame, write_frame};
 use crate::control::session::{DaemonState, DaemonStatus, Session, StreamCoordinator};

@@ -3,7 +3,9 @@ use std::net::TcpListener;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
+use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
+use std::sync::Once;
 use std::time::{Duration, Instant};
 
 use eframe::egui::{self, Color32, ColorImage, RichText, TextureHandle};
@@ -15,6 +17,9 @@ const RECONNECT_INTERVAL: Duration = Duration::from_secs(3);
 const SPAWN_INTERVAL: Duration = Duration::from_secs(5);
 const SPAWN_RETRY_DELAY: Duration = Duration::from_secs(10);
 const EXTERNAL_DAEMON_RETRY_DELAY: Duration = Duration::from_secs(15);
+
+static CHILD_PID: AtomicI32 = AtomicI32::new(0);
+static CTRL_C_HANDLER: Once = Once::new();
 
 fn main() -> eframe::Result<()> {
     let socket_path = expand_path(DEFAULT_SOCKET_PATH);
@@ -112,6 +117,16 @@ impl DaemonHandle {
     fn try_recv(&self) -> Option<DaemonEvent> {
         self.event_rx.try_recv().ok()
     }
+
+    fn command_sender(&self) -> Sender<DaemonCommand> {
+        self.command_tx.clone()
+    }
+}
+
+impl Drop for DaemonHandle {
+    fn drop(&mut self) {
+        let _ = self.command_tx.send(DaemonCommand::Shutdown);
+    }
 }
 
 impl Drop for DaemonHandle {
@@ -138,6 +153,7 @@ impl HostUiApp {
         shutdown_rx: Receiver<()>,
     ) -> Self {
         let daemon = DaemonHandle::new(socket_path);
+        install_ctrlc_handler(daemon.command_sender());
         let mut app = Self {
             daemon,
             status: DaemonStatus::default(),
@@ -395,9 +411,12 @@ impl DaemonClient {
         self.last_spawn_attempt = Instant::now();
 
         if let Ok(child) = Command::new("prlx-hostd")
+            .arg("--control-bind")
+            .arg("0.0.0.0:0")
             .env("PRLX_SOCKET_PATH", &self.socket_path)
             .spawn()
         {
+            CHILD_PID.store(child.id() as i32, Ordering::Relaxed);
             self.last_spawn_success = Some(Instant::now());
             self.spawned_child = Some(child);
             return;
@@ -405,9 +424,12 @@ impl DaemonClient {
 
         if let Some(path) = discover_local_hostd() {
             if let Ok(child) = Command::new(path)
+                .arg("--control-bind")
+                .arg("0.0.0.0:0")
                 .env("PRLX_SOCKET_PATH", &self.socket_path)
                 .spawn()
             {
+                CHILD_PID.store(child.id() as i32, Ordering::Relaxed);
                 self.last_spawn_success = Some(Instant::now());
                 self.spawned_child = Some(child);
             }
@@ -507,6 +529,7 @@ impl DaemonClient {
         };
         if let Ok(Some(_)) = child.try_wait() {
             self.spawned_child = None;
+            CHILD_PID.store(0, Ordering::Relaxed);
         }
     }
 
@@ -518,7 +541,24 @@ impl DaemonClient {
         let _ = child.wait();
         self.writer = None;
         self.reader = None;
+        CHILD_PID.store(0, Ordering::Relaxed);
     }
+}
+
+fn install_ctrlc_handler(command_tx: Sender<DaemonCommand>) {
+    CTRL_C_HANDLER.call_once(|| {
+        if let Err(err) = ctrlc::set_handler(move || {
+            let _ = command_tx.send(DaemonCommand::Shutdown);
+            let pid = CHILD_PID.load(Ordering::Relaxed);
+            if pid > 0 {
+                unsafe {
+                    libc::kill(pid, libc::SIGTERM);
+                }
+            }
+        }) {
+            eprintln!("Failed to install Ctrl-C handler: {err}");
+        }
+    });
 }
 
 fn parse_status(line: &str) -> Option<DaemonStatus> {
