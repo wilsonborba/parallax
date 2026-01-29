@@ -527,7 +527,6 @@ impl DaemonClient {
             self.spawned_child = None;
             CHILD_PID.store(0, Ordering::Relaxed);
         }
-        true
     }
 
     fn shutdown_child(&mut self) {
