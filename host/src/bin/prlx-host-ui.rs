@@ -59,6 +59,7 @@ impl UiState {
 #[derive(Debug, Clone)]
 struct DaemonStatus {
     state: UiState,
+    connected: bool,
     pin: Option<String>,
     qr_uri: Option<String>,
 }
@@ -67,6 +68,7 @@ impl Default for DaemonStatus {
     fn default() -> Self {
         Self {
             state: UiState::Idle,
+            connected: false,
             pin: None,
             qr_uri: None,
         }
@@ -219,6 +221,15 @@ impl eframe::App for HostUiApp {
                 ui.label("State:");
                 ui.label(RichText::new(self.status.state.label()).strong());
             });
+            ui.horizontal(|ui| {
+                ui.label("Daemon:");
+                let connection_label = if self.status.connected {
+                    "Connected"
+                } else {
+                    "Connecting..."
+                };
+                ui.label(RichText::new(connection_label).strong());
+            });
 
             if let Some(err) = &self.last_error {
                 ui.add_space(8.0);
@@ -304,6 +315,7 @@ struct DaemonClient {
     writer: Option<UnixStream>,
     reader: Option<BufReader<UnixStream>>,
     spawned_child: Option<Child>,
+    pending_command: Option<DaemonCommand>,
 }
 
 impl DaemonClient {
@@ -320,6 +332,7 @@ impl DaemonClient {
             writer: None,
             reader: None,
             spawned_child: None,
+            pending_command: None,
         }
     }
 
@@ -343,6 +356,7 @@ impl DaemonClient {
                 self.ensure_connected();
             }
 
+            self.flush_pending_command();
             self.refresh_child_status();
             self.poll_status();
             self.read_responses();
@@ -369,6 +383,7 @@ impl DaemonClient {
                         self.reader = Some(BufReader::new(reader_stream));
                         self.writer = Some(stream);
                         self.warning_sent = false;
+                        self.status.connected = true;
                         let _ = self.event_tx.send(DaemonEvent::Status(self.status.clone()));
                     }
                     Err(err) => {
@@ -453,9 +468,13 @@ impl DaemonClient {
             Ok(0) => {
                 self.writer = None;
                 self.reader = None;
+                self.status.connected = false;
+                let _ = self.event_tx.send(DaemonEvent::Status(self.status.clone()));
             }
             Ok(_) => {
                 if let Some(status) = parse_status(&buffer) {
+                    let mut status = status;
+                    status.connected = true;
                     self.status = status.clone();
                     let _ = self.event_tx.send(DaemonEvent::Status(status));
                 }
@@ -465,6 +484,8 @@ impl DaemonClient {
             Err(err) => {
                 self.writer = None;
                 self.reader = None;
+                self.status.connected = false;
+                let _ = self.event_tx.send(DaemonEvent::Status(self.status.clone()));
                 let _ = self
                     .event_tx
                     .send(DaemonEvent::Error(format!("Socket error: {err}")));
@@ -477,24 +498,59 @@ impl DaemonClient {
             DaemonCommand::Refresh => {
                 eprintln!("DaemonClient: Refresh command");
                 self.ensure_connected();
-                self.send_line("status", "refresh");
+                if self.writer.is_some() {
+                    self.send_line("status", "refresh");
+                } else {
+                    self.pending_command = Some(command);
+                }
             }
             DaemonCommand::StartStream => {
                 eprintln!("DaemonClient: StartStream command");
                 self.ensure_connected();
-                self.send_line("start", "start");
+                if self.writer.is_some() {
+                    self.send_line("start", "start");
+                } else {
+                    self.pending_command = Some(command);
+                }
             }
             DaemonCommand::StopStream => {
                 eprintln!("DaemonClient: StopStream command");
                 self.ensure_connected();
-                self.send_line("stop", "stop");
+                if self.writer.is_some() {
+                    self.send_line("stop", "stop");
+                }
                 self.shutdown_child();
             }
             DaemonCommand::Shutdown => {
                 eprintln!("DaemonClient: Shutdown command");
                 self.ensure_connected();
-                self.send_line("stop", "shutdown");
+                if self.writer.is_some() {
+                    self.send_line("stop", "shutdown");
+                }
                 self.shutdown_child();
+            }
+        }
+    }
+
+    fn flush_pending_command(&mut self) {
+        if self.writer.is_none() {
+            return;
+        }
+        let Some(command) = self.pending_command.take() else {
+            return;
+        };
+        match command {
+            DaemonCommand::Refresh => {
+                self.send_line("status", "refresh");
+            }
+            DaemonCommand::StartStream => {
+                self.send_line("start", "start");
+            }
+            DaemonCommand::StopStream => {
+                self.send_line("stop", "stop");
+            }
+            DaemonCommand::Shutdown => {
+                self.send_line("stop", "shutdown");
             }
         }
     }
@@ -511,6 +567,8 @@ impl DaemonClient {
         if writer.write_all(payload.as_bytes()).is_err() {
             self.writer = None;
             self.reader = None;
+            self.status.connected = false;
+            let _ = self.event_tx.send(DaemonEvent::Status(self.status.clone()));
             let _ = self
                 .event_tx
                 .send(DaemonEvent::Error(format!("Failed to send {action} command")));
@@ -527,7 +585,6 @@ impl DaemonClient {
             self.spawned_child = None;
             CHILD_PID.store(0, Ordering::Relaxed);
         }
-        true
     }
 
     fn shutdown_child(&mut self) {
