@@ -13,11 +13,12 @@ import javax.crypto.spec.PBEKeySpec
 import javax.crypto.spec.SecretKeySpec
 
 class ControlClient(
+    private val pairingToken: String,
     private val logger: Logger = LoggerProvider.logger,
     private val connectTimeoutMillis: Int = DEFAULT_TIMEOUT_MS,
     private val readTimeoutMillis: Int = DEFAULT_TIMEOUT_MS,
 ) {
-    fun openSession(host: String, port: Int, pairingToken: String, streamPort: Int): ControlSession {
+    fun openSession(host: String, port: Int, streamPort: Int): ControlSession {
         val socket = Socket()
         socket.tcpNoDelay = true
         socket.soTimeout = readTimeoutMillis
