@@ -32,6 +32,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -54,7 +55,6 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
@@ -414,7 +414,7 @@ private fun QrScannerSheet(
         sheetState = sheetState,
         windowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         dragHandle = null,
-        properties = DialogProperties(dismissOnClickOutside = true),
+        properties = ModalBottomSheetProperties(dismissOnClickOutside = true),
     ) {
         Column(
             modifier = Modifier
