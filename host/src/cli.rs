@@ -15,8 +15,8 @@ impl CliConfig {
         let mut display = String::from(":0");
         let mut bind_addr = String::from("0.0.0.0:5000");
         let mut target_addr = String::from("127.0.0.1:5000");
-        let mut control_bind = String::from("0.0.0.0:7000");
-        let mut pairing_token = String::from("parallax");
+        let mut control_bind = String::from("0.0.0.0:0");
+        let mut pairing_token = String::from("auto");
         let mut prefer_vaapi = true;
         let mut args = env::args().skip(1);
 
@@ -70,8 +70,8 @@ impl CliConfig {
             "  --display <DISPLAY>   X11 display to capture (default :0)",
             "  --bind <ADDR>         UDP bind address (default 0.0.0.0:5000)",
             "  --target <ADDR>       UDP target address (default 127.0.0.1:5000)",
-            "  --control-bind <ADDR> TCP control bind address (default 0.0.0.0:7000)",
-            "  --pairing-token <KEY> Pairing token for control sessions (default parallax)",
+            "  --control-bind <ADDR> TCP control bind address (default 0.0.0.0:0)",
+            "  --pairing-token <KEY> Pairing token for control sessions (default auto)",
             "  --prefer-vaapi        Prefer VAAPI H.264 encoder (default)",
             "  --software            Force software H.264 encoder",
             "  -h, --help            Print this help text",

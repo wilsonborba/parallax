@@ -1,4 +1,7 @@
-use std::net::{TcpListener, TcpStream};
+use std::io::{BufRead, Write};
+use std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
+use std::os::unix::net::{UnixListener, UnixStream};
+use std::path::PathBuf;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, Ordering},
@@ -6,13 +9,16 @@ use std::sync::{
 use std::thread;
 use std::time::Duration;
 
+use rand::Rng;
+
 use crate::capture;
 use crate::control::protocol::{read_frame, write_frame};
-use crate::control::session::{Session, StreamCoordinator};
+use crate::control::session::{DaemonState, DaemonStatus, Session, StreamCoordinator};
 use crate::encode;
 use crate::net;
 use crate::stream;
 
+const DEFAULT_SOCKET_PATH: &str = "~/.local/share/prlx/prlx.sock";
 #[derive(Debug, Clone)]
 pub struct StreamConfig {
     pub display: String,
@@ -43,6 +49,7 @@ struct StreamingHandle {
 pub struct StreamController {
     state: Mutex<StreamState>,
     config: StreamConfig,
+    target: Mutex<Option<String>>,
 }
 
 impl StreamController {
@@ -50,6 +57,7 @@ impl StreamController {
         Self {
             state: Mutex::new(StreamState { handle: None }),
             config,
+            target: Mutex::new(None),
         }
     }
 
@@ -85,9 +93,29 @@ impl StreamCoordinator for StreamController {
             return Err("stream already running".to_string());
         }
 
+        let target = {
+            let target = self
+                .target
+                .lock()
+                .map_err(|_| "target lock poisoned".to_string())?;
+            target.clone().or_else(|| {
+                if self.config.target_addr.trim().is_empty()
+                    || self.config.target_addr.ends_with(":0")
+                {
+                    None
+                } else {
+                    Some(self.config.target_addr.clone())
+                }
+            })
+        };
+        let Some(target_addr) = target else {
+            return Err("no target configured; waiting for client".to_string());
+        };
+
         let stop = Arc::new(AtomicBool::new(false));
         let thread_stop = Arc::clone(&stop);
-        let config = self.config.clone();
+        let mut config = self.config.clone();
+        config.target_addr = target_addr;
         let join = thread::spawn(move || {
             if let Err(err) = run_streaming(config, thread_stop) {
                 eprintln!("Streaming loop exited: {err}");
@@ -114,6 +142,15 @@ impl StreamCoordinator for StreamController {
             .map_err(|_| "stream thread panicked".to_string())?;
         Ok(())
     }
+
+    fn set_target(&self, target: String) -> Result<(), String> {
+        let mut current = self
+            .target
+            .lock()
+            .map_err(|_| "target lock poisoned".to_string())?;
+        *current = Some(target);
+        Ok(())
+    }
 }
 
 pub fn run(config: ControlConfig) -> Result<(), String> {
@@ -130,17 +167,54 @@ pub fn run_with_shutdown(
     listener
         .set_nonblocking(true)
         .map_err(|err| format!("Failed to set non-blocking mode: {err}"))?;
-    println!("Control listener bound on {}", config.control_bind);
+    let control_addr = listener
+        .local_addr()
+        .map_err(|err| format!("Failed to read listener addr: {err}"))?;
+    println!("Control listener bound on {}", control_addr);
 
     let stream_controller = Arc::new(StreamController::new(config.stream.clone()));
+    let pairing_token = resolve_pairing_token(&config.pairing_token);
+    let daemon_status = Arc::new(Mutex::new(DaemonStatus {
+        state: DaemonState::Waiting,
+        pin: Some(pairing_token.clone()),
+        qr_uri: Some(format!(
+            "prlx://{}:{}",
+            resolve_local_ip().unwrap_or_else(|| "127.0.0.1".to_string()),
+            control_addr.port()
+        )),
+    }));
+
+    let socket_path = expand_socket_path(DEFAULT_SOCKET_PATH);
+    let status_stream_controller = Arc::clone(&stream_controller);
+    let status_state = Arc::clone(&daemon_status);
+    let status_running = Arc::clone(&running);
+    thread::spawn(move || {
+        if let Err(err) = run_status_socket(
+            socket_path,
+            status_stream_controller,
+            status_state,
+            status_running,
+        ) {
+            eprintln!("Status socket error: {err}");
+        }
+    });
 
     while running.load(Ordering::Relaxed) {
         match listener.accept() {
-            Ok((stream, _)) => {
-                let pairing_token = config.pairing_token.clone();
+            Ok((stream, peer_addr)) => {
+                let pairing_token = pairing_token.clone();
                 let stream_controller = Arc::clone(&stream_controller);
+                let daemon_status = Arc::clone(&daemon_status);
+                let default_port = parse_port(&config.stream.target_addr);
                 thread::spawn(move || {
-                    if let Err(err) = handle_client(stream, pairing_token, stream_controller) {
+                    if let Err(err) = handle_client(
+                        stream,
+                        pairing_token,
+                        stream_controller,
+                        daemon_status,
+                        peer_addr,
+                        default_port,
+                    ) {
                         eprintln!("Control session error: {err}");
                     }
                 });
@@ -164,8 +238,17 @@ fn handle_client(
     mut stream: TcpStream,
     pairing_token: String,
     stream_controller: Arc<StreamController>,
+    daemon_status: Arc<Mutex<DaemonStatus>>,
+    client_addr: SocketAddr,
+    default_target_port: Option<u16>,
 ) -> Result<(), String> {
-    let mut session = Session::new(pairing_token, stream_controller);
+    let mut session = Session::new(
+        pairing_token,
+        stream_controller,
+        daemon_status,
+        client_addr,
+        default_target_port,
+    );
 
     loop {
         let frame = match read_frame(&mut stream)? {
@@ -253,4 +336,147 @@ fn run_streaming(config: StreamConfig, stop: Arc<AtomicBool>) -> Result<(), Stri
 
     println!("Streaming loop stopped");
     Ok(())
+}
+
+fn run_status_socket(
+    path: PathBuf,
+    stream_controller: Arc<StreamController>,
+    daemon_status: Arc<Mutex<DaemonStatus>>,
+    running: Arc<AtomicBool>,
+) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|err| format!("Failed to create socket directory: {err}"))?;
+    }
+    if path.exists() {
+        let _ = std::fs::remove_file(&path);
+    }
+
+    let listener =
+        UnixListener::bind(&path).map_err(|err| format!("Failed to bind socket: {err}"))?;
+    listener
+        .set_nonblocking(true)
+        .map_err(|err| format!("Failed to set socket non-blocking: {err}"))?;
+
+    while running.load(Ordering::Relaxed) {
+        match listener.accept() {
+            Ok((stream, _)) => {
+                let controller = Arc::clone(&stream_controller);
+                let status = Arc::clone(&daemon_status);
+                thread::spawn(move || {
+                    if let Err(err) = handle_status_client(stream, controller, status) {
+                        eprintln!("Status client error: {err}");
+                    }
+                });
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                thread::sleep(Duration::from_millis(100));
+            }
+            Err(err) => return Err(format!("Status accept error: {err}")),
+        }
+    }
+    Ok(())
+}
+
+fn handle_status_client(
+    mut stream: UnixStream,
+    stream_controller: Arc<StreamController>,
+    daemon_status: Arc<Mutex<DaemonStatus>>,
+) -> Result<(), String> {
+    let mut buffer = String::new();
+    let mut reader = std::io::BufReader::new(stream.try_clone().map_err(|err| err.to_string())?);
+    loop {
+        buffer.clear();
+        if reader.read_line(&mut buffer).map_err(|err| err.to_string())? == 0 {
+            return Ok(());
+        }
+        let line = buffer.trim();
+        match line {
+            "status" => {
+                let status = daemon_status
+                    .lock()
+                    .map_err(|_| "status lock poisoned".to_string())?;
+                write_status(&mut stream, &status)?;
+            }
+            "start" => {
+                let result = stream_controller.start_stream();
+                if let Ok(mut status) = daemon_status.lock() {
+                    if result.is_ok() {
+                        status.state = DaemonState::Streaming;
+                    }
+                }
+                let status = daemon_status
+                    .lock()
+                    .map_err(|_| "status lock poisoned".to_string())?;
+                write_status(&mut stream, &status)?;
+            }
+            "stop" => {
+                let result = stream_controller.stop_stream();
+                if let Ok(mut status) = daemon_status.lock() {
+                    if result.is_ok() {
+                        status.state = DaemonState::Connected;
+                    }
+                }
+                let status = daemon_status
+                    .lock()
+                    .map_err(|_| "status lock poisoned".to_string())?;
+                write_status(&mut stream, &status)?;
+            }
+            _ => {
+                let status = daemon_status
+                    .lock()
+                    .map_err(|_| "status lock poisoned".to_string())?;
+                write_status(&mut stream, &status)?;
+            }
+        }
+    }
+}
+
+fn write_status(stream: &mut UnixStream, status: &DaemonStatus) -> Result<(), String> {
+    let state = match status.state {
+        DaemonState::Idle => "idle",
+        DaemonState::Waiting => "waiting",
+        DaemonState::Connected => "connected",
+        DaemonState::Streaming => "streaming",
+    };
+    let mut line = format!("state={state}");
+    if let Some(pin) = &status.pin {
+        line.push_str(&format!(" pin={pin}"));
+    }
+    if let Some(qr) = &status.qr_uri {
+        line.push_str(&format!(" qr={qr}"));
+    }
+    line.push('\n');
+    stream
+        .write_all(line.as_bytes())
+        .map_err(|err| format!("Failed to write status: {err}"))?;
+    Ok(())
+}
+
+fn resolve_pairing_token(value: &str) -> String {
+    if value != "auto" {
+        return value.to_string();
+    }
+    let mut rng = rand::thread_rng();
+    let pin: u32 = rand::Rng::gen_range(&mut rng, 100_000..=999_999);
+    format!("{pin}")
+}
+
+fn parse_port(addr: &str) -> Option<u16> {
+    addr.rsplit_once(':').and_then(|(_, port)| port.parse().ok())
+}
+
+fn resolve_local_ip() -> Option<String> {
+    let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("8.8.8.8:80").ok()?;
+    socket.local_addr().ok().map(|addr| addr.ip().to_string())
+}
+
+fn expand_socket_path(path: &str) -> PathBuf {
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            return PathBuf::from(home).join(rest);
+        }
+    }
+    PathBuf::from(path)
 }
