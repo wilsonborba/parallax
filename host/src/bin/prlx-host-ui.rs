@@ -1,6 +1,7 @@
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
@@ -10,6 +11,7 @@ use qrcode::QrCode;
 const DEFAULT_SOCKET_PATH: &str = "~/.local/share/prlx/prlx.sock";
 const STATUS_POLL_INTERVAL: Duration = Duration::from_secs(2);
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(3);
+const SPAWN_INTERVAL: Duration = Duration::from_secs(5);
 
 fn main() -> eframe::Result<()> {
     let socket_path = expand_path(DEFAULT_SOCKET_PATH);
@@ -17,7 +19,7 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Parallax Host UI",
         native_options,
-        Box::new(|cc| Ok(Box::new(HostUiApp::new(cc, socket_path)))),
+        Box::new(|cc| Box::new(HostUiApp::new(cc, socket_path))),
     )
 }
 
@@ -119,7 +121,7 @@ impl HostUiApp {
             qr_texture: None,
             qr_payload: None,
         };
-        app.refresh_qr_texture(cc.egui_ctx);
+        app.refresh_qr_texture(&cc.egui_ctx);
         app.daemon.send(DaemonCommand::Refresh);
         app
     }
@@ -214,7 +216,7 @@ impl eframe::App for HostUiApp {
                 ui.label("Pairing QR");
                 if let Some(texture) = &self.qr_texture {
                     let size = texture.size_vec2();
-                    ui.image(texture, size);
+                    ui.image((texture.id(), size));
                 } else {
                     ui.label("No QR payload from daemon.");
                 }
@@ -230,6 +232,7 @@ struct DaemonClient {
     event_tx: Sender<DaemonEvent>,
     last_status_poll: Instant,
     last_connect_attempt: Instant,
+    last_spawn_attempt: Instant,
     status: DaemonStatus,
     writer: Option<UnixStream>,
     reader: Option<BufReader<UnixStream>>,
@@ -242,6 +245,7 @@ impl DaemonClient {
             event_tx,
             last_status_poll: Instant::now() - STATUS_POLL_INTERVAL,
             last_connect_attempt: Instant::now() - RECONNECT_INTERVAL,
+            last_spawn_attempt: Instant::now() - SPAWN_INTERVAL,
             status: DaemonStatus::default(),
             writer: None,
             reader: None,
@@ -292,9 +296,23 @@ impl DaemonClient {
                 }
             }
             Err(err) => {
+                self.ensure_daemon_spawn();
                 let _ = self
                     .event_tx
                     .send(DaemonEvent::Error(format!("Failed to connect: {err}")));
+            }
+        }
+    }
+
+    fn ensure_daemon_spawn(&mut self) {
+        if self.last_spawn_attempt.elapsed() < SPAWN_INTERVAL {
+            return;
+        }
+        self.last_spawn_attempt = Instant::now();
+
+        if Command::new("prlx-hostd").spawn().is_err() {
+            if let Some(path) = discover_local_hostd() {
+                let _ = Command::new(path).spawn();
             }
         }
     }
@@ -399,7 +417,7 @@ fn qr_to_image(payload: &str, scale: usize) -> Option<ColorImage> {
 
     for y in 0..width {
         for x in 0..width {
-            let color = if code[(x, y)] {
+            let color = if code[(x, y)] == qrcode::Color::Dark {
                 Color32::BLACK
             } else {
                 Color32::WHITE
@@ -426,4 +444,14 @@ fn expand_path(path: &str) -> PathBuf {
         }
     }
     PathBuf::from(path)
+}
+
+fn discover_local_hostd() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    let candidate = dir.join("prlx-hostd");
+    if candidate.exists() {
+        return Some(candidate);
+    }
+    None
 }

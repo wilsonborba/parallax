@@ -11,7 +11,8 @@ Android-based client.
 ## Host daemon (systemd user unit)
 The `prlx-hostd` binary runs the TCP control loop and manages UDP streaming. A sample systemd
 user unit is available at `packaging/prlx-hostd.service`. Customize the arguments as needed
-for your display and addresses.
+for your display and addresses. The default control bind uses `0.0.0.0:0` to auto-select an
+available TCP port and exposes the chosen port in the UI QR code.
 
 Enable the user unit:
 
