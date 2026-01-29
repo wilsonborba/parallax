@@ -1,4 +1,5 @@
 use std::io::{BufRead, BufReader, Write};
+use std::net::TcpListener;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
@@ -13,6 +14,7 @@ const STATUS_POLL_INTERVAL: Duration = Duration::from_secs(2);
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(3);
 const SPAWN_INTERVAL: Duration = Duration::from_secs(5);
 const SPAWN_RETRY_DELAY: Duration = Duration::from_secs(10);
+const EXTERNAL_DAEMON_RETRY_DELAY: Duration = Duration::from_secs(15);
 
 fn main() -> eframe::Result<()> {
     let socket_path = expand_path(DEFAULT_SOCKET_PATH);
@@ -71,6 +73,7 @@ impl Default for DaemonStatus {
 enum DaemonEvent {
     Status(DaemonStatus),
     Error(String),
+    Warning(String),
 }
 
 #[derive(Debug)]
@@ -121,6 +124,7 @@ struct HostUiApp {
     daemon: DaemonHandle,
     status: DaemonStatus,
     last_error: Option<String>,
+    last_warning: Option<String>,
     qr_texture: Option<TextureHandle>,
     qr_payload: Option<String>,
     shutdown_rx: Receiver<()>,
@@ -138,6 +142,7 @@ impl HostUiApp {
             daemon,
             status: DaemonStatus::default(),
             last_error: None,
+            last_warning: None,
             qr_texture: None,
             qr_payload: None,
             shutdown_rx,
@@ -193,9 +198,13 @@ impl eframe::App for HostUiApp {
             match event {
                 DaemonEvent::Status(status) => {
                     self.status = status;
+                    self.last_warning = None;
                 }
                 DaemonEvent::Error(err) => {
                     self.last_error = Some(err);
+                }
+                DaemonEvent::Warning(warning) => {
+                    self.last_warning = Some(warning);
                 }
             }
         }
@@ -214,6 +223,11 @@ impl eframe::App for HostUiApp {
             if let Some(err) = &self.last_error {
                 ui.add_space(8.0);
                 ui.colored_label(Color32::RED, format!("Daemon error: {err}"));
+            }
+
+            if let Some(warning) = &self.last_warning {
+                ui.add_space(8.0);
+                ui.colored_label(Color32::YELLOW, warning);
             }
 
             ui.add_space(16.0);
@@ -270,10 +284,13 @@ struct DaemonClient {
     last_connect_attempt: Instant,
     last_spawn_attempt: Instant,
     last_spawn_success: Option<Instant>,
+    spawn_suppressed_until: Option<Instant>,
     status: DaemonStatus,
     writer: Option<UnixStream>,
     reader: Option<BufReader<UnixStream>>,
     spawned_child: Option<Child>,
+    control_bind: String,
+    warning_sent: bool,
 }
 
 impl DaemonClient {
@@ -285,10 +302,14 @@ impl DaemonClient {
             last_connect_attempt: Instant::now() - RECONNECT_INTERVAL,
             last_spawn_attempt: Instant::now() - SPAWN_INTERVAL,
             last_spawn_success: None,
+            spawn_suppressed_until: None,
             status: DaemonStatus::default(),
             writer: None,
             reader: None,
             spawned_child: None,
+            control_bind: std::env::var("PRLX_CONTROL_BIND")
+                .unwrap_or_else(|_| "0.0.0.0:0".to_string()),
+            warning_sent: false,
         }
     }
 
@@ -330,6 +351,8 @@ impl DaemonClient {
 
         match UnixStream::connect(&self.socket_path) {
             Ok(stream) => {
+                self.warning_sent = false;
+                self.spawn_suppressed_until = None;
                 let _ = stream.set_read_timeout(Some(Duration::from_millis(200)));
                 let _ = stream.set_write_timeout(Some(Duration::from_millis(200)));
                 match stream.try_clone() {
@@ -360,6 +383,12 @@ impl DaemonClient {
         if self.spawned_child.is_some() {
             return;
         }
+        if let Some(suppressed_until) = self.spawn_suppressed_until {
+            if suppressed_until > Instant::now() {
+                return;
+            }
+            self.spawn_suppressed_until = None;
+        }
         if self.last_spawn_attempt.elapsed() < SPAWN_INTERVAL {
             return;
         }
@@ -370,12 +399,29 @@ impl DaemonClient {
         }
         self.last_spawn_attempt = Instant::now();
 
+        if self.attach_existing_socket() {
+            self.spawn_suppressed_until = Some(Instant::now() + EXTERNAL_DAEMON_RETRY_DELAY);
+            return;
+        }
+
+        if self.control_port_in_use() {
+            self.spawn_suppressed_until = Some(Instant::now() + EXTERNAL_DAEMON_RETRY_DELAY);
+            if !self.warning_sent {
+                let _ = self.event_tx.send(DaemonEvent::Warning(
+                    "Host daemon already running".to_string(),
+                ));
+                self.warning_sent = true;
+            }
+            return;
+        }
+
         let mut spawn_errors = Vec::new();
 
         match self.spawn_hostd("prlx-hostd") {
             Ok(child) => {
                 self.last_spawn_success = Some(Instant::now());
                 self.spawned_child = Some(child);
+                self.warning_sent = false;
                 return;
             }
             Err(err) => {
@@ -388,6 +434,7 @@ impl DaemonClient {
                 Ok(child) => {
                     self.last_spawn_success = Some(Instant::now());
                     self.spawned_child = Some(child);
+                    self.warning_sent = false;
                     return;
                 }
                 Err(err) => {
@@ -408,8 +455,79 @@ impl DaemonClient {
         Command::new(path)
             .env("PRLX_SOCKET_PATH", &self.socket_path)
             .arg("--control-bind")
-            .arg("0.0.0.0:0")
+            .arg(&self.control_bind)
             .spawn()
+    }
+
+    fn attach_existing_socket(&mut self) -> bool {
+        if !self.socket_path.exists() {
+            return false;
+        }
+
+        let stream = match UnixStream::connect(&self.socket_path) {
+            Ok(stream) => stream,
+            Err(_) => return false,
+        };
+
+        let _ = stream.set_read_timeout(Some(Duration::from_millis(200)));
+        let _ = stream.set_write_timeout(Some(Duration::from_millis(200)));
+        let reader_stream = match stream.try_clone() {
+            Ok(reader_stream) => reader_stream,
+            Err(err) => {
+                let _ = self
+                    .event_tx
+                    .send(DaemonEvent::Error(format!("Failed to clone socket: {err}")));
+                return false;
+            }
+        };
+
+        let mut reader = BufReader::new(reader_stream);
+        if stream.write_all(b"status\n").is_err() {
+            return false;
+        }
+
+        let mut buffer = String::new();
+        match reader.read_line(&mut buffer) {
+            Ok(0) => return false,
+            Ok(_) => {
+                let Some(status) = parse_status(&buffer) else {
+                    return false;
+                };
+                self.status = status.clone();
+                self.writer = Some(stream);
+                self.reader = Some(reader);
+                self.warning_sent = false;
+                let _ = self.event_tx.send(DaemonEvent::Status(status));
+                true
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => false,
+            Err(err) if err.kind() == std::io::ErrorKind::TimedOut => false,
+            Err(_) => false,
+        }
+    }
+
+    fn control_port_in_use(&mut self) -> bool {
+        let Some((_, port)) = self.control_bind.rsplit_once(':') else {
+            return false;
+        };
+        if port == "0" {
+            return false;
+        }
+
+        match TcpListener::bind(&self.control_bind) {
+            Ok(listener) => {
+                drop(listener);
+                false
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::AddrInUse => true,
+            Err(err) => {
+                let _ = self.event_tx.send(DaemonEvent::Error(format!(
+                    "Failed to check control port {}: {err}",
+                    self.control_bind
+                )));
+                false
+            }
+        }
     }
 
     fn poll_status(&mut self) {
