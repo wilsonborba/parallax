@@ -204,7 +204,7 @@ private fun ControlsPanel(
             ConnectionSettings(
                 host = uiState.config.host,
                 streamPort = uiState.config.streamPort,
-                controlPort = uiState.config.controlPort,
+                controlPort = uiState.controlPort,
                 accessPin = uiState.config.accessPin,
                 enabled = status == StreamState.Status.Idle || status == StreamState.Status.Error,
                 onHostChanged = onHostChanged,
