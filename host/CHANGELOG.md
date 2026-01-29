@@ -9,6 +9,7 @@
 ### 🐛 Bug Fixes
 
 - *(borrow)* Fixed a borrow error
+- *(ui)* Added some debug message on ui for debug
 
 ### ⚙️ Miscellaneous Tasks
 
