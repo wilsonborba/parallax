@@ -32,7 +32,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -410,44 +409,37 @@ private fun QrScannerSheet(
     }
 
     ModalBottomSheet(
-    onDismissRequest = onDismiss,
-    sheetState = sheetState,
-    dragHandle = null,
-    // In older M3, ModalBottomSheetProperties DOES NOT have dismissOnClickOutside.
-    // Outside click dismissal is typically handled by onDismissRequest.
-    properties = ModalBottomSheetProperties(
-        securePolicy = SecureFlagPolicy.Inherit,
-        isFocusable = true,
-        shouldDismissOnBackPress = true,
-    ),
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        dragHandle = null,
     ) {
-        Text(
-            text = "Scan QR code",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Text(
-            text = "Align the QR code within the frame to autofill the host and control port.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        AndroidView(
-            factory = { previewView },
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(320.dp),
-        )
-        OutlinedButton(
-            onClick = onDismiss,
-            modifier = Modifier.fillMaxWidth(),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Close")
+            Text(
+                text = "Scan QR code",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = "Align the QR code within the frame to autofill the host and control port.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            AndroidView(
+                factory = { previewView },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(320.dp),
+            )
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Close")
             }
         }
     }
