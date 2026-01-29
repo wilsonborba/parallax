@@ -52,7 +52,8 @@ fun StreamScreen(
     onStopClicked: () -> Unit,
     onScaleChanged: (Float) -> Unit,
     onHostChanged: (String) -> Unit,
-    onPortChanged: (Int) -> Unit,
+    onStreamPortChanged: (Int) -> Unit,
+    onControlPortChanged: (Int) -> Unit,
     onAccessPinChanged: (String) -> Unit,
     onSurfaceAvailable: (Surface) -> Unit,
     onSurfaceDestroyed: () -> Unit,
@@ -109,7 +110,8 @@ fun StreamScreen(
                         onStopClicked = onStopClicked,
                         onScaleChanged = onScaleChanged,
                         onHostChanged = onHostChanged,
-                        onPortChanged = onPortChanged,
+                        onStreamPortChanged = onStreamPortChanged,
+                        onControlPortChanged = onControlPortChanged,
                         onAccessPinChanged = onAccessPinChanged,
                         status = status,
                         modifier = Modifier
@@ -131,7 +133,8 @@ private fun ControlsPanel(
     onStopClicked: () -> Unit,
     onScaleChanged: (Float) -> Unit,
     onHostChanged: (String) -> Unit,
-    onPortChanged: (Int) -> Unit,
+    onStreamPortChanged: (Int) -> Unit,
+    onControlPortChanged: (Int) -> Unit,
     onAccessPinChanged: (String) -> Unit,
     status: StreamState.Status,
     modifier: Modifier = Modifier,
@@ -155,11 +158,13 @@ private fun ControlsPanel(
             )
             ConnectionSettings(
                 host = uiState.config.host,
-                port = uiState.config.port,
+                streamPort = uiState.config.streamPort,
+                controlPort = uiState.config.controlPort,
                 accessPin = uiState.config.accessPin,
                 enabled = status == StreamState.Status.Idle || status == StreamState.Status.Error,
                 onHostChanged = onHostChanged,
-                onPortChanged = onPortChanged,
+                onStreamPortChanged = onStreamPortChanged,
+                onControlPortChanged = onControlPortChanged,
                 onAccessPinChanged = onAccessPinChanged,
             )
             StreamActions(
@@ -179,18 +184,22 @@ private fun ControlsPanel(
 @Composable
 private fun ConnectionSettings(
     host: String,
-    port: Int,
+    streamPort: Int,
+    controlPort: Int,
     accessPin: String,
     enabled: Boolean,
     onHostChanged: (String) -> Unit,
-    onPortChanged: (Int) -> Unit,
+    onStreamPortChanged: (Int) -> Unit,
+    onControlPortChanged: (Int) -> Unit,
     onAccessPinChanged: (String) -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
     var hostText by remember(host) { mutableStateOf(host) }
-    var portText by remember(port) { mutableStateOf(port.toString()) }
+    var streamPortText by remember(streamPort) { mutableStateOf(streamPort.toString()) }
+    var controlPortText by remember(controlPort) { mutableStateOf(controlPort.toString()) }
     var accessPinText by remember(accessPin) { mutableStateOf(accessPin) }
-    val portValue = portText.toIntOrNull()
+    val streamPortValue = streamPortText.toIntOrNull()
+    val controlPortValue = controlPortText.toIntOrNull()
     Column(verticalArrangement = Arrangement.spacedBy(spacing.small)) {
         Text(
             text = "Sender connection",
@@ -209,15 +218,27 @@ private fun ConnectionSettings(
             modifier = Modifier.fillMaxWidth(),
         )
         OutlinedTextField(
-            value = portText,
+            value = streamPortText,
             onValueChange = { value ->
-                portText = value
-                value.toIntOrNull()?.let(onPortChanged)
+                streamPortText = value
+                value.toIntOrNull()?.let(onStreamPortChanged)
             },
-            label = { Text("Port") },
+            label = { Text("Stream port") },
             singleLine = true,
             enabled = enabled,
-            isError = portValue == null,
+            isError = streamPortValue == null,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = controlPortText,
+            onValueChange = { value ->
+                controlPortText = value
+                value.toIntOrNull()?.let(onControlPortChanged)
+            },
+            label = { Text("Control port") },
+            singleLine = true,
+            enabled = enabled,
+            isError = controlPortValue == null,
             modifier = Modifier.fillMaxWidth(),
         )
         OutlinedTextField(
@@ -231,9 +252,16 @@ private fun ConnectionSettings(
             enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
         )
-        if (portValue == null) {
+        if (streamPortValue == null) {
             Text(
-                text = "Port must be a number.",
+                text = "Stream port must be a number.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        if (controlPortValue == null) {
+            Text(
+                text = "Control port must be a number.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )

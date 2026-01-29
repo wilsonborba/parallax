@@ -12,9 +12,14 @@ class SetStreamEndpointUseCase(
         streamSessionService.setHost(host)
     }
 
-    fun setPort(port: Int) {
-        settingsStore.setPort(port)
-        streamSessionService.setPort(port)
+    fun setStreamPort(port: Int) {
+        settingsStore.setStreamPort(port)
+        streamSessionService.setStreamPort(port)
+    }
+
+    fun setControlPort(port: Int) {
+        settingsStore.setControlPort(port)
+        streamSessionService.setControlPort(port)
     }
 
     fun setAccessPin(accessPin: String) {

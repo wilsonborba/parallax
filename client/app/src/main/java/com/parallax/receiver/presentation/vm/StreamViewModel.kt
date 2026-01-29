@@ -3,7 +3,6 @@ package com.parallax.receiver.presentation.vm
 import android.view.Surface
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.parallax.receiver.core.config.CONTROL_PORT_OFFSET
 import com.parallax.receiver.core.logging.Logger
 import com.parallax.receiver.core.logging.LoggerProvider
 import com.parallax.receiver.core.qr.PrlxQrParser
@@ -48,8 +47,12 @@ class StreamViewModel(
         setStreamEndpoint.setHost(host)
     }
 
-    fun onPortChanged(port: Int) {
-        setStreamEndpoint.setPort(port)
+    fun onStreamPortChanged(port: Int) {
+        setStreamEndpoint.setStreamPort(port)
+    }
+
+    fun onControlPortChanged(port: Int) {
+        setStreamEndpoint.setControlPort(port)
     }
 
     fun onAccessPinChanged(accessPin: String) {
@@ -58,12 +61,8 @@ class StreamViewModel(
 
     fun onQrPayloadScanned(payload: String) {
         val endpoint = PrlxQrParser.parse(payload) ?: return
-        val streamPort = endpoint.controlPort - CONTROL_PORT_OFFSET
-        if (streamPort <= 0) {
-            return
-        }
         setStreamEndpoint.setHost(endpoint.host)
-        setStreamEndpoint.setPort(streamPort)
+        setStreamEndpoint.setControlPort(endpoint.controlPort)
     }
 
     fun onSurfaceAvailable(surface: Surface) {
@@ -86,7 +85,8 @@ class StreamViewModel(
                             "from" to lastStatus?.name,
                             "to" to currentStatus.name,
                             "host" to state.config.host,
-                            "port" to state.config.port,
+                            "streamPort" to state.config.streamPort,
+                            "controlPort" to state.config.controlPort,
                             "scale" to state.config.scale,
                         ),
                     )
