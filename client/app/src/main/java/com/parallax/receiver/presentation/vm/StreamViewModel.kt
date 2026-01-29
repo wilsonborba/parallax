@@ -5,7 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.parallax.receiver.core.logging.Logger
 import com.parallax.receiver.core.logging.LoggerProvider
-import com.parallax.receiver.core.qr.PrlxQrParser
+import com.parallax.receiver.core.qr.QrParser
 import com.parallax.receiver.domain.model.StreamState
 import com.parallax.receiver.domain.model.UiState
 import com.parallax.receiver.domain.service.StreamSessionService
@@ -59,12 +59,8 @@ class StreamViewModel(
         setStreamEndpoint.setAccessPin(accessPin)
     }
 
-    fun onPairingTokenChanged(pairingToken: String) {
-        setStreamEndpoint.setPairingToken(pairingToken)
-    }
-
     fun onQrPayloadScanned(payload: String) {
-        val endpoint = PrlxQrParser.parse(payload) ?: return
+        val endpoint = QrParser.parse(payload) ?: return
         setStreamEndpoint.setHost(endpoint.host)
         setStreamEndpoint.setControlPort(endpoint.controlPort)
     }
