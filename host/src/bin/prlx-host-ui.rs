@@ -223,6 +223,9 @@ impl eframe::App for HostUiApp {
                         ),
                     );
                 }
+                DaemonEvent::Warning(warning) => {
+                    self.last_warning = Some(warning);
+                }
             }
         }
 
