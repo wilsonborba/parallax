@@ -362,7 +362,6 @@ impl DaemonClient {
         match UnixStream::connect(&self.socket_path) {
             Ok(stream) => {
                 self.warning_sent = false;
-                self.spawn_suppressed_until = None;
                 let _ = stream.set_read_timeout(Some(Duration::from_millis(200)));
                 let _ = stream.set_write_timeout(Some(Duration::from_millis(200)));
                 match stream.try_clone() {
