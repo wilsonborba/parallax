@@ -41,6 +41,7 @@ class StreamSessionService(
             config = initialConfig,
             streamState = StreamState(StreamState.Status.Idle),
             pairingToken = initialConfig.pairingToken,
+            controlPort = initialConfig.controlPort,
         ),
     )
     private var connectionJob: Job? = null
@@ -57,6 +58,7 @@ class StreamSessionService(
             config = config,
             streamState = StreamState(StreamState.Status.Connecting),
             pairingToken = config.pairingToken,
+            controlPort = config.controlPort,
         )
         connectionJob = coroutineScope.launch {
             delay(connectionDelayMillis)
@@ -137,7 +139,7 @@ class StreamSessionService(
 
     fun setControlPort(port: Int) {
         mutableState.update { current ->
-            current.copy(config = current.config.copy(controlPort = port))
+            current.copy(config = current.config.copy(controlPort = port), controlPort = port)
         }
     }
 
@@ -150,7 +152,11 @@ class StreamSessionService(
     fun setPairingToken(pairingToken: String) {
         mutableState.update { current ->
             val updatedConfig = current.config.copy(pairingToken = pairingToken)
-            current.copy(config = updatedConfig, pairingToken = updatedConfig.pairingToken)
+            current.copy(
+                config = updatedConfig,
+                pairingToken = updatedConfig.pairingToken,
+                controlPort = updatedConfig.controlPort,
+            )
         }
     }
 

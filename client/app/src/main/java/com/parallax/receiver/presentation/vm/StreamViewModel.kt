@@ -86,7 +86,7 @@ class StreamViewModel(
                             "to" to currentStatus.name,
                             "host" to state.config.host,
                             "streamPort" to state.config.streamPort,
-                            "controlPort" to state.config.controlPort,
+                            "controlPort" to state.controlPort,
                             "scale" to state.config.scale,
                         ),
                     )
