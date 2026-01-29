@@ -7,7 +7,9 @@ use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::time::{Duration, Instant};
 
-use eframe::egui::{self, Color32, ColorImage, RichText, TextureHandle};
+use eframe::egui::{
+    self, Align, Color32, ColorImage, FontId, Layout, RichText, Stroke, TextureHandle,
+};
 use qrcode::QrCode;
 
 use host::core::logging as loggins;
@@ -28,7 +30,10 @@ fn main() -> eframe::Result<()> {
         format!("Starting Parallax Host UI; socket_path={socket_path:?}"),
     );
 
-    let native_options = eframe::NativeOptions::default();
+    let native_options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default().with_inner_size([980.0, 720.0]),
+        ..Default::default()
+    };
     let (shutdown_tx, shutdown_rx) = mpsc::channel();
 
     let handler_tx = shutdown_tx.clone();
@@ -172,6 +177,7 @@ impl HostUiApp {
 
         app.refresh_qr_texture(&cc.egui_ctx);
         app.daemon.send(DaemonCommand::Refresh);
+        apply_visuals(&cc.egui_ctx);
         app
     }
 
@@ -205,6 +211,7 @@ impl HostUiApp {
 
 impl eframe::App for HostUiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        apply_visuals(ctx);
         // Shutdown handling
         if !self.shutdown_initiated {
             match self.shutdown_rx.try_recv() {
@@ -252,86 +259,188 @@ impl eframe::App for HostUiApp {
 
         self.refresh_qr_texture(ctx);
 
-        // UI
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Parallax Host");
-            ui.separator();
+        let palette = UiPalette::new();
+        let time = ctx.input(|i| i.time) as f32;
+        let pulse = (time * 1.4).sin() * 0.5 + 0.5;
+        let accent = lerp_color(palette.accent, palette.accent_glow, pulse);
+        let state_color = state_color(self.status.state, &palette);
 
-            ui.horizontal(|ui| {
-                ui.label("State:");
-                ui.label(RichText::new(self.status.state.label()).strong());
-            });
-            ui.horizontal(|ui| {
-                ui.label("Daemon:");
-                let connection_label = if self.status.connected {
-                    "Connected"
-                } else {
-                    "Connecting..."
-                };
-                ui.label(RichText::new(connection_label).strong());
-            });
-
-            if let Some(err) = &self.last_error {
-                ui.add_space(8.0);
-                ui.colored_label(Color32::RED, format!("Daemon error: {err}"));
-            }
-
-            if let Some(warning) = &self.last_warning {
-                ui.add_space(8.0);
-                ui.colored_label(Color32::YELLOW, warning);
-            }
-
-            ui.add_space(16.0);
-
-            ui.horizontal(|ui| {
-                if ui
-                    .add_enabled(
-                        self.status.state != UiState::Streaming,
-                        egui::Button::new("Start"),
-                    )
-                    .clicked()
-                {
-                    loggins::info("ui", "Start clicked");
-                    self.daemon.send(DaemonCommand::StartStream);
-                }
-
-                if ui
-                    .add_enabled(
-                        self.status.state == UiState::Streaming,
-                        egui::Button::new("Stop"),
-                    )
-                    .clicked()
-                {
-                    loggins::info("ui", "Stop clicked");
-                    self.daemon.send(DaemonCommand::StopStream);
-                }
-
-                if ui.button("Refresh").clicked() {
-                    loggins::info("ui", "Refresh clicked");
-                    self.daemon.send(DaemonCommand::Refresh);
-                }
+        egui::TopBottomPanel::top("header")
+            .frame(card_frame(&palette, palette.header))
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(
+                            RichText::new("Parallax Host")
+                                .size(28.0)
+                                .strong()
+                                .color(palette.text),
+                        );
+                        ui.label(
+                            RichText::new("Centro de controle do streaming local")
+                                .size(14.0)
+                                .color(palette.subtle_text),
+                        );
+                    });
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        status_pill(
+                            ui,
+                            "Daemon",
+                            daemon_label(self.status.connected),
+                            state_color,
+                        );
+                        ui.add_space(12.0);
+                        status_pill(ui, "Estado", self.status.state.label(), accent);
+                    });
+                });
             });
 
-            ui.add_space(16.0);
+        egui::CentralPanel::default()
+            .frame(egui::Frame::none().fill(palette.background))
+            .show(ctx, |ui| {
+                ui.add_space(12.0);
+                ui.columns(2, |columns| {
+                    let left = &mut columns[0];
+                    let right = &mut columns[1];
 
-            ui.group(|ui| {
-                ui.label("PIN");
-                let pin_text = self.status.pin.as_deref().unwrap_or("----");
-                ui.label(RichText::new(pin_text).size(32.0).strong());
+                    card_frame(&palette, palette.card).show(left, |ui| {
+                        section_header(ui, "Status da Sessão");
+                        ui.add_space(4.0);
+                        info_row(ui, "Estado", self.status.state.label());
+                        info_row(ui, "Daemon", daemon_label(self.status.connected));
+                        info_row(ui, "Socket", "Monitorando localmente");
+                        ui.add_space(12.0);
+                        if self.status.state == UiState::Streaming {
+                            ui.add(
+                                egui::ProgressBar::new(1.0)
+                                    .desired_width(f32::INFINITY)
+                                    .fill(accent)
+                                    .text("Transmitindo agora"),
+                            );
+                        } else {
+                            ui.add(
+                                egui::ProgressBar::new(0.4)
+                                    .desired_width(f32::INFINITY)
+                                    .fill(palette.muted)
+                                    .text("Aguardando ação"),
+                            );
+                        }
+                    });
+
+                    left.add_space(16.0);
+
+                    card_frame(&palette, palette.card).show(left, |ui| {
+                        section_header(ui, "Controles Rápidos");
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            let start = ui.add_enabled(
+                                self.status.state != UiState::Streaming,
+                                primary_button("▶ Iniciar"),
+                            );
+                            if start.clicked() {
+                                loggins::info("ui", "Start clicked");
+                                self.daemon.send(DaemonCommand::StartStream);
+                            }
+
+                            let stop = ui.add_enabled(
+                                self.status.state == UiState::Streaming,
+                                secondary_button("■ Parar"),
+                            );
+                            if stop.clicked() {
+                                loggins::info("ui", "Stop clicked");
+                                self.daemon.send(DaemonCommand::StopStream);
+                            }
+
+                            if ui.add(ghost_button("↻ Atualizar")).clicked() {
+                                loggins::info("ui", "Refresh clicked");
+                                self.daemon.send(DaemonCommand::Refresh);
+                            }
+                        });
+                        ui.add_space(12.0);
+                        ui.label(
+                            RichText::new("Dica: mantenha o Parallax aberto para parear novos clientes.")
+                                .size(13.0)
+                                .color(palette.subtle_text),
+                        );
+                    });
+
+                    if let Some(err) = &self.last_error {
+                        left.add_space(16.0);
+                        card_frame(&palette, palette.error_bg).show(left, |ui| {
+                            section_header_colored(ui, "Erro do daemon", palette.error);
+                            ui.label(
+                                RichText::new(err)
+                                    .size(13.0)
+                                    .color(palette.text),
+                            );
+                        });
+                    }
+
+                    if let Some(warning) = &self.last_warning {
+                        left.add_space(16.0);
+                        card_frame(&palette, palette.warning_bg).show(left, |ui| {
+                            section_header_colored(ui, "Aviso", palette.warning);
+                            ui.label(
+                                RichText::new(warning)
+                                    .size(13.0)
+                                    .color(palette.text),
+                            );
+                        });
+                    }
+
+                    card_frame(&palette, palette.card).show(right, |ui| {
+                        section_header(ui, "Pareamento seguro");
+                        ui.add_space(8.0);
+                        let pin_text = self.status.pin.as_deref().unwrap_or("----");
+                        ui.label(
+                            RichText::new("PIN de acesso")
+                                .size(13.0)
+                                .color(palette.subtle_text),
+                        );
+                        ui.label(
+                            RichText::new(pin_text)
+                                .size(36.0)
+                                .font(FontId::proportional(36.0))
+                                .strong()
+                                .color(palette.text),
+                        );
+                        ui.add_space(12.0);
+                        ui.label(
+                            RichText::new("QR Code")
+                                .size(13.0)
+                                .color(palette.subtle_text),
+                        );
+                        ui.add_space(6.0);
+                        let qr_frame = egui::Frame::none()
+                            .fill(palette.qr_bg)
+                            .rounding(egui::Rounding::same(18.0))
+                            .stroke(Stroke::new(1.0, palette.card_border))
+                            .inner_margin(egui::Margin::same(12.0));
+                        qr_frame.show(ui, |ui| {
+                            ui.vertical_centered(|ui| {
+                                if let Some(texture) = &self.qr_texture {
+                                    let size = texture.size_vec2();
+                                    ui.image((texture.id(), size));
+                                } else {
+                                    ui.label(
+                                        RichText::new("Nenhum QR disponível.")
+                                            .size(13.0)
+                                            .color(palette.subtle_text),
+                                    );
+                                }
+                            });
+                        });
+                        ui.add_space(12.0);
+                        ui.label(
+                            RichText::new(
+                                "Abra o app cliente e escaneie o QR para iniciar a transmissão com segurança.",
+                            )
+                            .size(13.0)
+                            .color(palette.subtle_text),
+                        );
+                    });
+                });
             });
-
-            ui.add_space(16.0);
-
-            ui.group(|ui| {
-                ui.label("Pairing QR");
-                if let Some(texture) = &self.qr_texture {
-                    let size = texture.size_vec2();
-                    ui.image((texture.id(), size));
-                } else {
-                    ui.label("No QR payload from daemon.");
-                }
-            });
-        });
 
         ctx.request_repaint_after(Duration::from_millis(200));
     }
@@ -798,6 +907,173 @@ fn qr_to_image(payload: &str, scale: usize) -> Option<ColorImage> {
         size: [image_size, image_size],
         pixels,
     })
+}
+
+struct UiPalette {
+    background: Color32,
+    header: Color32,
+    card: Color32,
+    card_border: Color32,
+    qr_bg: Color32,
+    text: Color32,
+    subtle_text: Color32,
+    accent: Color32,
+    accent_glow: Color32,
+    muted: Color32,
+    error: Color32,
+    error_bg: Color32,
+    warning: Color32,
+    warning_bg: Color32,
+}
+
+impl UiPalette {
+    fn new() -> Self {
+        Self {
+            background: Color32::from_rgb(244, 246, 249),
+            header: Color32::from_rgb(250, 251, 252),
+            card: Color32::from_rgb(255, 255, 255),
+            card_border: Color32::from_rgb(223, 227, 234),
+            qr_bg: Color32::from_rgb(247, 248, 251),
+            text: Color32::from_rgb(18, 22, 29),
+            subtle_text: Color32::from_rgb(104, 112, 125),
+            accent: Color32::from_rgb(0, 122, 255),
+            accent_glow: Color32::from_rgb(88, 168, 255),
+            muted: Color32::from_rgb(210, 214, 221),
+            error: Color32::from_rgb(201, 61, 72),
+            error_bg: Color32::from_rgb(255, 238, 240),
+            warning: Color32::from_rgb(214, 131, 0),
+            warning_bg: Color32::from_rgb(255, 246, 230),
+        }
+    }
+}
+
+fn apply_visuals(ctx: &egui::Context) {
+    let mut visuals = egui::Visuals::light();
+    visuals.window_rounding = egui::Rounding::same(18.0);
+    visuals.menu_rounding = egui::Rounding::same(12.0);
+    visuals.widgets.inactive.rounding = egui::Rounding::same(12.0);
+    visuals.widgets.hovered.rounding = egui::Rounding::same(12.0);
+    visuals.widgets.active.rounding = egui::Rounding::same(12.0);
+    visuals.widgets.noninteractive.rounding = egui::Rounding::same(12.0);
+    visuals.window_shadow = egui::Shadow {
+        extrusion: 18.0,
+        color: Color32::from_black_alpha(20),
+    };
+    visuals.popup_shadow = egui::Shadow {
+        extrusion: 12.0,
+        color: Color32::from_black_alpha(25),
+    };
+    ctx.set_visuals(visuals);
+}
+
+fn card_frame(palette: &UiPalette, fill: Color32) -> egui::Frame {
+    egui::Frame::none()
+        .fill(fill)
+        .rounding(egui::Rounding::same(18.0))
+        .stroke(Stroke::new(1.0, palette.card_border))
+        .shadow(egui::Shadow {
+            extrusion: 16.0,
+            color: Color32::from_black_alpha(22),
+        })
+        .inner_margin(egui::Margin::same(16.0))
+}
+
+fn state_color(state: UiState, palette: &UiPalette) -> Color32 {
+    match state {
+        UiState::Idle => palette.muted,
+        UiState::Waiting => Color32::from_rgb(120, 136, 255),
+        UiState::Connected => Color32::from_rgb(46, 166, 82),
+        UiState::Streaming => palette.accent,
+    }
+}
+
+fn daemon_label(connected: bool) -> &'static str {
+    if connected {
+        "Conectado"
+    } else {
+        "Conectando..."
+    }
+}
+
+fn status_pill(ui: &mut egui::Ui, label: &str, value: &str, color: Color32) {
+    let pill_frame = egui::Frame::none()
+        .fill(color)
+        .rounding(egui::Rounding::same(999.0))
+        .inner_margin(egui::Margin::symmetric(12.0, 6.0));
+    ui.vertical(|ui| {
+        ui.label(
+            RichText::new(label)
+                .size(12.0)
+                .color(Color32::from_rgb(110, 118, 132)),
+        );
+        pill_frame.show(ui, |ui| {
+            ui.label(RichText::new(value).size(13.0).color(Color32::WHITE));
+        });
+    });
+}
+
+fn section_header(ui: &mut egui::Ui, title: &str) {
+    ui.label(
+        RichText::new(title)
+            .size(16.0)
+            .strong()
+            .color(Color32::from_rgb(24, 28, 36)),
+    );
+}
+
+fn section_header_colored(ui: &mut egui::Ui, title: &str, color: Color32) {
+    ui.label(RichText::new(title).size(16.0).strong().color(color));
+}
+
+fn info_row(ui: &mut egui::Ui, label: &str, value: &str) {
+    ui.horizontal(|ui| {
+        ui.label(
+            RichText::new(label)
+                .size(13.0)
+                .color(Color32::from_rgb(96, 104, 118)),
+        );
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.label(
+                RichText::new(value)
+                    .size(13.0)
+                    .color(Color32::from_rgb(24, 28, 36)),
+            );
+        });
+    });
+}
+
+fn primary_button(label: &str) -> egui::Button {
+    egui::Button::new(RichText::new(label).size(14.0).color(Color32::WHITE))
+        .fill(Color32::from_rgb(0, 122, 255))
+        .min_size(egui::vec2(120.0, 38.0))
+}
+
+fn secondary_button(label: &str) -> egui::Button {
+    egui::Button::new(
+        RichText::new(label)
+            .size(14.0)
+            .color(Color32::from_rgb(32, 36, 44)),
+    )
+    .fill(Color32::from_rgb(233, 236, 242))
+    .min_size(egui::vec2(110.0, 38.0))
+}
+
+fn ghost_button(label: &str) -> egui::Button {
+    egui::Button::new(
+        RichText::new(label)
+            .size(14.0)
+            .color(Color32::from_rgb(32, 36, 44)),
+    )
+    .stroke(Stroke::new(1.0, Color32::from_rgb(210, 214, 221)))
+    .min_size(egui::vec2(110.0, 38.0))
+}
+
+fn lerp_color(from: Color32, to: Color32, t: f32) -> Color32 {
+    let t = t.clamp(0.0, 1.0);
+    let r = from.r() as f32 + (to.r() as f32 - from.r() as f32) * t;
+    let g = from.g() as f32 + (to.g() as f32 - from.g() as f32) * t;
+    let b = from.b() as f32 + (to.b() as f32 - from.b() as f32) * t;
+    Color32::from_rgb(r as u8, g as u8, b as u8)
 }
 
 fn expand_path(path: &str) -> PathBuf {
