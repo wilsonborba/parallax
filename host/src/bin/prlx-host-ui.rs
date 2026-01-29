@@ -21,9 +21,6 @@ const EXTERNAL_DAEMON_RETRY_DELAY: Duration = Duration::from_secs(15);
 static CHILD_PID: AtomicI32 = AtomicI32::new(0);
 static CTRL_C_HANDLER: Once = Once::new();
 
-static CHILD_PID: AtomicI32 = AtomicI32::new(0);
-static CTRL_C_HANDLER: Once = Once::new();
-
 fn main() -> eframe::Result<()> {
     let socket_path = expand_path(DEFAULT_SOCKET_PATH);
     let native_options = eframe::NativeOptions::default();
