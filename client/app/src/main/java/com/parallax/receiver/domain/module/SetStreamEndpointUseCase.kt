@@ -26,4 +26,9 @@ class SetStreamEndpointUseCase(
         settingsStore.setAccessPin(accessPin)
         streamSessionService.setAccessPin(accessPin)
     }
+
+    fun setPairingToken(pairingToken: String) {
+        settingsStore.setPairingToken(pairingToken)
+        streamSessionService.setPairingToken(pairingToken)
+    }
 }

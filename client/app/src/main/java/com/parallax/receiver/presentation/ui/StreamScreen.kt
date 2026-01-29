@@ -55,6 +55,7 @@ fun StreamScreen(
     onStreamPortChanged: (Int) -> Unit,
     onControlPortChanged: (Int) -> Unit,
     onAccessPinChanged: (String) -> Unit,
+    onPairingTokenChanged: (String) -> Unit,
     onSurfaceAvailable: (Surface) -> Unit,
     onSurfaceDestroyed: () -> Unit,
     modifier: Modifier = Modifier,
@@ -113,6 +114,7 @@ fun StreamScreen(
                         onStreamPortChanged = onStreamPortChanged,
                         onControlPortChanged = onControlPortChanged,
                         onAccessPinChanged = onAccessPinChanged,
+                        onPairingTokenChanged = onPairingTokenChanged,
                         status = status,
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
@@ -136,6 +138,7 @@ private fun ControlsPanel(
     onStreamPortChanged: (Int) -> Unit,
     onControlPortChanged: (Int) -> Unit,
     onAccessPinChanged: (String) -> Unit,
+    onPairingTokenChanged: (String) -> Unit,
     status: StreamState.Status,
     modifier: Modifier = Modifier,
 ) {
@@ -161,11 +164,13 @@ private fun ControlsPanel(
                 streamPort = uiState.config.streamPort,
                 controlPort = uiState.config.controlPort,
                 accessPin = uiState.config.accessPin,
+                pairingToken = uiState.pairingToken,
                 enabled = status == StreamState.Status.Idle || status == StreamState.Status.Error,
                 onHostChanged = onHostChanged,
                 onStreamPortChanged = onStreamPortChanged,
                 onControlPortChanged = onControlPortChanged,
                 onAccessPinChanged = onAccessPinChanged,
+                onPairingTokenChanged = onPairingTokenChanged,
             )
             StreamActions(
                 status = status,
@@ -187,17 +192,20 @@ private fun ConnectionSettings(
     streamPort: Int,
     controlPort: Int,
     accessPin: String,
+    pairingToken: String,
     enabled: Boolean,
     onHostChanged: (String) -> Unit,
     onStreamPortChanged: (Int) -> Unit,
     onControlPortChanged: (Int) -> Unit,
     onAccessPinChanged: (String) -> Unit,
+    onPairingTokenChanged: (String) -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
     var hostText by remember(host) { mutableStateOf(host) }
     var streamPortText by remember(streamPort) { mutableStateOf(streamPort.toString()) }
     var controlPortText by remember(controlPort) { mutableStateOf(controlPort.toString()) }
     var accessPinText by remember(accessPin) { mutableStateOf(accessPin) }
+    var pairingTokenText by remember(pairingToken) { mutableStateOf(pairingToken) }
     val streamPortValue = streamPortText.toIntOrNull()
     val controlPortValue = controlPortText.toIntOrNull()
     Column(verticalArrangement = Arrangement.spacedBy(spacing.small)) {
@@ -248,6 +256,17 @@ private fun ConnectionSettings(
                 onAccessPinChanged(value)
             },
             label = { Text("Access PIN") },
+            singleLine = true,
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = pairingTokenText,
+            onValueChange = { value ->
+                pairingTokenText = value
+                onPairingTokenChanged(value)
+            },
+            label = { Text("Pairing token") },
             singleLine = true,
             enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
