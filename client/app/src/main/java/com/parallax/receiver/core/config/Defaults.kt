@@ -5,3 +5,4 @@ const val DEFAULT_REMOTE_HEIGHT = 1080
 const val DEFAULT_FPS = 60
 const val SCALE_MIN = 0.5f
 const val SCALE_MAX = 2.0f
+const val CONTROL_PORT_OFFSET = 2000

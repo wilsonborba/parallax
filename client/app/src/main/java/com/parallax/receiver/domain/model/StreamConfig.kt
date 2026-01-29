@@ -4,4 +4,5 @@ data class StreamConfig(
     val host: String,
     val port: Int,
     val scale: Float,
+    val accessPin: String,
 )

@@ -14,11 +14,10 @@ import javax.crypto.spec.SecretKeySpec
 
 class ControlClient(
     private val logger: Logger = LoggerProvider.logger,
-    private val pairingToken: String = DEFAULT_PAIRING_TOKEN,
     private val connectTimeoutMillis: Int = DEFAULT_TIMEOUT_MS,
     private val readTimeoutMillis: Int = DEFAULT_TIMEOUT_MS,
 ) {
-    fun openSession(host: String, port: Int): ControlSession {
+    fun openSession(host: String, port: Int, pairingToken: String): ControlSession {
         val socket = Socket()
         socket.tcpNoDelay = true
         socket.soTimeout = readTimeoutMillis
@@ -129,7 +128,6 @@ class ControlClient(
         private const val HEADER_LEN = 4
         private const val MAX_PAYLOAD_LEN = 0xFFFF
         private const val DEFAULT_TIMEOUT_MS = 5_000
-        private const val DEFAULT_PAIRING_TOKEN = "parallax"
         private const val PBKDF2_ITERATIONS = 100_000
         private const val KEY_LEN_BYTES = 32
         private const val HKDF_INFO = "parallax-control-auth"

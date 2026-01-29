@@ -4,6 +4,7 @@ import android.view.Surface
 import com.parallax.receiver.core.control.ControlClient
 import com.parallax.receiver.core.logging.Logger
 import com.parallax.receiver.core.logging.LoggerProvider
+import com.parallax.receiver.core.config.CONTROL_PORT_OFFSET
 import com.parallax.receiver.core.streaming.H264StreamReceiver
 import com.parallax.receiver.dal.local.SettingsStore
 import com.parallax.receiver.domain.model.StreamConfig
@@ -31,6 +32,7 @@ class StreamSessionService(
         host = settingsStore.getHost(),
         port = settingsStore.getPort(),
         scale = settingsStore.getScale(),
+        accessPin = settingsStore.getAccessPin(),
     ),
 ) {
     private val mutableState = MutableStateFlow(
@@ -130,6 +132,12 @@ class StreamSessionService(
         }
     }
 
+    fun setAccessPin(accessPin: String) {
+        mutableState.update { current ->
+            current.copy(config = current.config.copy(accessPin = accessPin))
+        }
+    }
+
     private fun startReceiver(config: StreamConfig, surface: Surface) {
         try {
             streamReceiver.start(config.port, surface)
@@ -155,7 +163,7 @@ class StreamSessionService(
             return true
         }
         return try {
-            val session = controlClient.openSession(config.host, config.port + CONTROL_PORT_OFFSET)
+            val session = controlClient.openSession(config.host, config.port + CONTROL_PORT_OFFSET, config.accessPin)
             session.startStream()
             controlSession = session
             true
@@ -191,6 +199,5 @@ class StreamSessionService(
 
     private companion object {
         private const val TAG = "StreamSessionService"
-        private const val CONTROL_PORT_OFFSET = 2000
     }
 }

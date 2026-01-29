@@ -32,6 +32,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        handleIntentPayload(intent)
         setContent {
             ReceiverTheme {
                 Surface(
@@ -47,12 +48,23 @@ class MainActivity : ComponentActivity() {
                         onScaleChanged = streamViewModel::onScaleChanged,
                         onHostChanged = streamViewModel::onHostChanged,
                         onPortChanged = streamViewModel::onPortChanged,
+                        onAccessPinChanged = streamViewModel::onAccessPinChanged,
                         onSurfaceAvailable = streamViewModel::onSurfaceAvailable,
                         onSurfaceDestroyed = streamViewModel::onSurfaceDestroyed,
                     )
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        handleIntentPayload(intent)
+    }
+
+    private fun handleIntentPayload(intent: android.content.Intent?) {
+        val payload = intent?.dataString ?: return
+        streamViewModel.onQrPayloadScanned(payload)
     }
 }
 
