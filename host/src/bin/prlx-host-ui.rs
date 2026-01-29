@@ -12,6 +12,7 @@ const DEFAULT_SOCKET_PATH: &str = "~/.local/share/prlx/prlx.sock";
 const STATUS_POLL_INTERVAL: Duration = Duration::from_secs(2);
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(3);
 const SPAWN_INTERVAL: Duration = Duration::from_secs(5);
+const SPAWN_RETRY_DELAY: Duration = Duration::from_secs(10);
 
 fn main() -> eframe::Result<()> {
     let socket_path = expand_path(DEFAULT_SOCKET_PATH);
@@ -233,6 +234,7 @@ struct DaemonClient {
     last_status_poll: Instant,
     last_connect_attempt: Instant,
     last_spawn_attempt: Instant,
+    last_spawn_success: Option<Instant>,
     status: DaemonStatus,
     writer: Option<UnixStream>,
     reader: Option<BufReader<UnixStream>>,
@@ -246,6 +248,7 @@ impl DaemonClient {
             last_status_poll: Instant::now() - STATUS_POLL_INTERVAL,
             last_connect_attempt: Instant::now() - RECONNECT_INTERVAL,
             last_spawn_attempt: Instant::now() - SPAWN_INTERVAL,
+            last_spawn_success: None,
             status: DaemonStatus::default(),
             writer: None,
             reader: None,
@@ -308,11 +311,35 @@ impl DaemonClient {
         if self.last_spawn_attempt.elapsed() < SPAWN_INTERVAL {
             return;
         }
+        if let Some(last_success) = self.last_spawn_success {
+            if last_success.elapsed() < SPAWN_RETRY_DELAY {
+                return;
+            }
+        }
         self.last_spawn_attempt = Instant::now();
 
-        if Command::new("prlx-hostd").spawn().is_err() {
-            if let Some(path) = discover_local_hostd() {
-                let _ = Command::new(path).spawn();
+        if Command::new("prlx-hostd").spawn().is_ok() {
+            self.last_spawn_success = Some(Instant::now());
+            return;
+        }
+
+        if let Some(path) = discover_local_hostd() {
+            if Command::new(path).spawn().is_ok() {
+                self.last_spawn_success = Some(Instant::now());
+                return;
+            }
+        }
+
+        if let Some(repo_root) = find_repo_root() {
+            let _ = Command::new("cargo")
+                .arg("build")
+                .arg("--bin")
+                .arg("prlx-hostd")
+                .current_dir(&repo_root)
+                .status();
+            let candidate = repo_root.join("target/debug/prlx-hostd");
+            if candidate.exists() && Command::new(candidate).spawn().is_ok() {
+                self.last_spawn_success = Some(Instant::now());
             }
         }
     }
@@ -453,5 +480,38 @@ fn discover_local_hostd() -> Option<PathBuf> {
     if candidate.exists() {
         return Some(candidate);
     }
+    let repo_root = find_repo_root()?;
+    let candidate = repo_root.join("target/debug/prlx-hostd");
+    if candidate.exists() {
+        return Some(candidate);
+    }
     None
+}
+
+fn find_repo_root() -> Option<PathBuf> {
+    let mut cursor = std::env::current_exe().ok()?.parent()?.to_path_buf();
+    for _ in 0..6 {
+        if cursor.join("Cargo.toml").exists() {
+            return Some(cursor);
+        }
+        if let Some(parent) = cursor.parent() {
+            cursor = parent.to_path_buf();
+        } else {
+            break;
+        }
+    }
+    std::env::current_dir().ok().and_then(|dir| {
+        let mut cursor = dir;
+        for _ in 0..6 {
+            if cursor.join("Cargo.toml").exists() {
+                return Some(cursor);
+            }
+            if let Some(parent) = cursor.parent() {
+                cursor = parent.to_path_buf();
+            } else {
+                break;
+            }
+        }
+        None
+    })
 }
