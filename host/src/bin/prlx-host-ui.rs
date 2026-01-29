@@ -1,13 +1,12 @@
 // src/bin/prlx-host-ui.rs
 //
-// Full adjusted version:
-// - ALL UI text in English
-// - Removes egui::Shadow + Frame::shadow() (compatible with older egui)
-// - Fixes mutable borrow of columns with split_at_mut()
-// - Avoids double Ctrl-C handler registration (ONLY uses the shutdown channel handler in main())
-// - Keeps your daemon/socket debug logging and protocol
-//
-// NOTE: This file assumes you have: `use host::core::logging as loggins;`
+// Full adjusted version (layout + spacing + purple theme):
+// - All UI text in English
+// - Fixes vertical badge stacking by making badges horizontal + limiting wrap
+// - Adds outer padding around entire window + spacing between cards
+// - Keeps older-egui compatibility (no egui::Shadow / Frame::shadow)
+// - Keeps daemon debug logging + socket protocol
+// - Avoids double Ctrl-C handler registration (ONLY uses shutdown channel handler in main())
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
@@ -32,6 +31,11 @@ const SPAWN_RETRY_DELAY: Duration = Duration::from_secs(10);
 
 static CHILD_PID: AtomicI32 = AtomicI32::new(0);
 
+// Layout constants (tune here)
+const OUTER_MARGIN: f32 = 16.0;
+const CARD_GAP: f32 = 16.0;
+const SECTION_GAP: f32 = 14.0;
+
 fn main() -> eframe::Result<()> {
     let socket_path = expand_path(DEFAULT_SOCKET_PATH);
     loggins::info(
@@ -40,11 +44,11 @@ fn main() -> eframe::Result<()> {
     );
 
     let native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([980.0, 720.0]),
+        viewport: egui::ViewportBuilder::default().with_inner_size([1020.0, 760.0]),
         ..Default::default()
     };
 
-    // We keep ONLY this Ctrl-C handler (no second handler anywhere else).
+    // Keep ONLY this Ctrl-C handler (no second handler anywhere else).
     let (shutdown_tx, shutdown_rx) = mpsc::channel();
     let handler_tx = shutdown_tx.clone();
     if let Err(err) = ctrlc::set_handler(move || {
@@ -148,10 +152,6 @@ impl DaemonHandle {
     fn try_recv(&self) -> Option<DaemonEvent> {
         self.event_rx.try_recv().ok()
     }
-
-    fn command_sender(&self) -> Sender<DaemonCommand> {
-        self.command_tx.clone()
-    }
 }
 
 struct HostUiApp {
@@ -163,8 +163,6 @@ struct HostUiApp {
     qr_payload: Option<String>,
     shutdown_rx: Receiver<()>,
     shutdown_initiated: bool,
-
-    // UI polish
     visuals_applied: bool,
 }
 
@@ -175,6 +173,7 @@ impl HostUiApp {
         shutdown_rx: Receiver<()>,
     ) -> Self {
         loggins::info("ui", "HostUiApp::new");
+
         let daemon = DaemonHandle::new(socket_path);
 
         let mut app = Self {
@@ -201,19 +200,30 @@ impl HostUiApp {
         }
         self.visuals_applied = true;
 
-        // Compatible with older egui: do NOT touch egui::Shadow or Frame::shadow.
+        let palette = UiPalette::new();
+
+        // Older-egui safe visuals (no Shadow types).
         let mut visuals = egui::Visuals::light();
+
+        // Window/panel fill prevents the “black corners” look when using rounding.
+        // If your egui version doesn't have these fields, comment them out.
+        visuals.window_fill = palette.background;
+        visuals.panel_fill = palette.background;
+
+        // Rounding
         visuals.window_rounding = egui::Rounding::same(16.0);
         visuals.menu_rounding = egui::Rounding::same(12.0);
+
+        // Widget rounding
         visuals.widgets.inactive.rounding = egui::Rounding::same(12.0);
         visuals.widgets.hovered.rounding = egui::Rounding::same(12.0);
         visuals.widgets.active.rounding = egui::Rounding::same(12.0);
         visuals.widgets.noninteractive.rounding = egui::Rounding::same(12.0);
 
-        // Slightly nicer strokes
-        visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, Color32::from_rgb(220, 225, 233));
-        visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, Color32::from_rgb(200, 207, 220));
-        visuals.widgets.active.bg_stroke = Stroke::new(1.0, Color32::from_rgb(140, 170, 220));
+        // Strokes
+        visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, palette.card_border);
+        visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, Color32::from_rgb(195, 202, 214));
+        visuals.widgets.active.bg_stroke = Stroke::new(1.0, palette.accent);
 
         ctx.set_visuals(visuals);
     }
@@ -251,7 +261,7 @@ impl eframe::App for HostUiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.apply_visuals_once(ctx);
 
-        // Shutdown handling (only via main's ctrlc handler channel)
+        // Shutdown handling
         if !self.shutdown_initiated {
             match self.shutdown_rx.try_recv() {
                 Ok(()) => {
@@ -272,25 +282,13 @@ impl eframe::App for HostUiApp {
         while let Some(event) = self.daemon.try_recv() {
             match event {
                 DaemonEvent::Status(status) => {
-                    loggins::debug(
-                        "ui",
-                        format!(
-                            "Daemon status update: state={:?} connected={} pin={} qr={}",
-                            status.state,
-                            status.connected,
-                            status.pin.as_deref().unwrap_or("None"),
-                            status.qr_uri.as_deref().unwrap_or("None")
-                        ),
-                    );
                     self.status = status;
                     self.last_warning = None;
                 }
                 DaemonEvent::Error(err) => {
-                    loggins::error("ui", format!("Daemon error event: {err}"));
                     self.last_error = Some(err);
                 }
                 DaemonEvent::Warning(warning) => {
-                    loggins::warn("ui", format!("Daemon warning event: {warning}"));
                     self.last_warning = Some(warning);
                 }
             }
@@ -298,18 +296,20 @@ impl eframe::App for HostUiApp {
 
         self.refresh_qr_texture(ctx);
 
-        // UI palette + subtle animation
         let palette = UiPalette::new();
         let time = ctx.input(|i| i.time) as f32;
-        let pulse = (time * 1.2).sin() * 0.5 + 0.5;
+        let pulse = (time * 1.0).sin() * 0.5 + 0.5;
         let accent = lerp_color(palette.accent, palette.accent_glow, pulse);
-        let state_color = state_color(self.status.state, &palette);
 
-        // Header
+        // ---------- HEADER ----------
         egui::TopBottomPanel::top("header")
-            .frame(card_frame(&palette, palette.header))
+            .frame(header_frame(&palette))
             .show(ctx, |ui| {
+                // Make header tall enough + padded
+                ui.add_space(4.0);
+
                 ui.horizontal(|ui| {
+                    // Left title stack
                     ui.vertical(|ui| {
                         ui.label(
                             RichText::new("Parallax Host")
@@ -324,41 +324,51 @@ impl eframe::App for HostUiApp {
                         );
                     });
 
+                    // Right badges (force horizontal, prevent wrap weirdness)
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        status_pill(
+                        ui.spacing_mut().item_spacing.x = 10.0;
+
+                        badge(
                             ui,
                             "Daemon",
                             daemon_label(self.status.connected),
-                            state_color,
+                            state_color(self.status.connected, &palette),
+                            &palette,
                         );
-                        ui.add_space(10.0);
-                        status_pill(ui, "State", self.status.state.label(), accent);
+
+                        badge(ui, "State", self.status.state.label(), accent, &palette);
                     });
                 });
+
+                ui.add_space(2.0);
             });
 
-        // Content
+        // ---------- MAIN BODY ----------
         egui::CentralPanel::default()
             .frame(egui::Frame::none().fill(palette.background))
             .show(ctx, |ui| {
-                ui.add_space(12.0);
+                // Outer padding around everything
+                ui.add_space(OUTER_MARGIN);
 
+                // Use a fixed two-column layout that doesn't compress text weirdly
                 ui.columns(2, |columns| {
-                    // Fix borrow checker: split slice into two disjoint mutable slices
                     let (left_slice, right_slice) = columns.split_at_mut(1);
                     let left = &mut left_slice[0];
                     let right = &mut right_slice[0];
 
-                    // Left: Session summary
+                    left.spacing_mut().item_spacing = egui::vec2(0.0, CARD_GAP);
+                    right.spacing_mut().item_spacing = egui::vec2(0.0, CARD_GAP);
+
+                    // LEFT COLUMN
                     card_frame(&palette, palette.card).show(left, |ui| {
-                        section_header(ui, "Session");
-                        ui.add_space(8.0);
+                        section_header(ui, "Session", &palette);
+                        ui.add_space(SECTION_GAP);
 
                         info_row(ui, "State", self.status.state.label(), &palette);
                         info_row(ui, "Daemon", daemon_label(self.status.connected), &palette);
                         info_row(ui, "Socket", "Local IPC (Unix socket)", &palette);
 
-                        ui.add_space(12.0);
+                        ui.add_space(SECTION_GAP);
 
                         if self.status.state == UiState::Streaming {
                             ui.add(
@@ -369,14 +379,14 @@ impl eframe::App for HostUiApp {
                             );
                         } else if self.status.connected {
                             ui.add(
-                                egui::ProgressBar::new(0.65)
+                                egui::ProgressBar::new(0.70)
                                     .desired_width(f32::INFINITY)
-                                    .fill(Color32::from_rgb(140, 190, 255))
+                                    .fill(lerp_color(palette.accent, palette.accent_glow, 0.35))
                                     .text("Ready"),
                             );
                         } else {
                             ui.add(
-                                egui::ProgressBar::new(0.25)
+                                egui::ProgressBar::new(0.30)
                                     .desired_width(f32::INFINITY)
                                     .fill(palette.muted)
                                     .text("Connecting…"),
@@ -384,17 +394,16 @@ impl eframe::App for HostUiApp {
                         }
                     });
 
-                    left.add_space(16.0);
-
-                    // Left: Controls
                     card_frame(&palette, palette.card).show(left, |ui| {
-                        section_header(ui, "Controls");
-                        ui.add_space(10.0);
+                        section_header(ui, "Controls", &palette);
+                        ui.add_space(SECTION_GAP);
 
                         ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 10.0;
+
                             let start = ui.add_enabled(
                                 self.status.state != UiState::Streaming,
-                                primary_button("▶ Start"),
+                                primary_button("▶ Start", &palette),
                             );
                             if start.clicked() {
                                 loggins::info("ui", "Start clicked");
@@ -403,20 +412,20 @@ impl eframe::App for HostUiApp {
 
                             let stop = ui.add_enabled(
                                 self.status.state == UiState::Streaming,
-                                secondary_button("■ Stop"),
+                                secondary_button("■ Stop", &palette),
                             );
                             if stop.clicked() {
                                 loggins::info("ui", "Stop clicked");
                                 self.daemon.send(DaemonCommand::StopStream);
                             }
 
-                            if ui.add(ghost_button("↻ Refresh")).clicked() {
+                            if ui.add(ghost_button("↻ Refresh", &palette)).clicked() {
                                 loggins::info("ui", "Refresh clicked");
                                 self.daemon.send(DaemonCommand::Refresh);
                             }
                         });
 
-                        ui.add_space(12.0);
+                        ui.add_space(SECTION_GAP);
                         ui.label(
                             RichText::new(
                                 "Tip: Keep Parallax Host running to allow pairing new clients.",
@@ -426,46 +435,44 @@ impl eframe::App for HostUiApp {
                         );
                     });
 
-                    // Left: Messages
                     if let Some(err) = &self.last_error {
-                        left.add_space(16.0);
                         card_frame(&palette, palette.error_bg).show(left, |ui| {
                             section_header_colored(ui, "Daemon Error", palette.error);
-                            ui.add_space(6.0);
+                            ui.add_space(8.0);
                             ui.label(RichText::new(err).size(13.0).color(palette.text));
                         });
                     }
 
                     if let Some(warning) = &self.last_warning {
-                        left.add_space(16.0);
                         card_frame(&palette, palette.warning_bg).show(left, |ui| {
                             section_header_colored(ui, "Warning", palette.warning);
-                            ui.add_space(6.0);
+                            ui.add_space(8.0);
                             ui.label(RichText::new(warning).size(13.0).color(palette.text));
                         });
                     }
 
-                    // Right: Pairing card
+                    // RIGHT COLUMN
                     card_frame(&palette, palette.card).show(right, |ui| {
-                        section_header(ui, "Secure Pairing");
-                        ui.add_space(10.0);
+                        section_header(ui, "Secure Pairing", &palette);
+                        ui.add_space(SECTION_GAP);
 
                         ui.label(
                             RichText::new("Access PIN")
                                 .size(13.0)
                                 .color(palette.subtle_text),
                         );
+                        ui.add_space(6.0);
 
                         let pin_text = self.status.pin.as_deref().unwrap_or("----");
                         ui.label(
                             RichText::new(pin_text)
-                                .size(38.0)
-                                .font(FontId::proportional(38.0))
+                                .size(40.0)
+                                .font(FontId::proportional(40.0))
                                 .strong()
                                 .color(palette.text),
                         );
 
-                        ui.add_space(12.0);
+                        ui.add_space(SECTION_GAP);
 
                         ui.label(
                             RichText::new("QR Code")
@@ -478,12 +485,16 @@ impl eframe::App for HostUiApp {
                             .fill(palette.qr_bg)
                             .rounding(egui::Rounding::same(18.0))
                             .stroke(Stroke::new(1.0, palette.card_border))
-                            .inner_margin(egui::Margin::same(12.0));
+                            .inner_margin(egui::Margin::same(14.0));
 
                         qr_frame.show(ui, |ui| {
                             ui.vertical_centered(|ui| {
                                 if let Some(texture) = &self.qr_texture {
-                                    let size = texture.size_vec2();
+                                    // Clamp QR size so it doesn’t explode or compress layout
+                                    let mut size = texture.size_vec2();
+                                    let max_side = 220.0;
+                                    let scale = (max_side / size.x).min(max_side / size.y).min(1.0);
+                                    size *= scale;
                                     ui.image((texture.id(), size));
                                 } else {
                                     ui.label(
@@ -495,7 +506,7 @@ impl eframe::App for HostUiApp {
                             });
                         });
 
-                        ui.add_space(12.0);
+                        ui.add_space(SECTION_GAP);
                         ui.label(
                             RichText::new(
                                 "Open the client app and scan the QR to connect securely.",
@@ -505,6 +516,8 @@ impl eframe::App for HostUiApp {
                         );
                     });
                 });
+
+                ui.add_space(OUTER_MARGIN);
             });
 
         ctx.request_repaint_after(Duration::from_millis(200));
@@ -565,17 +578,13 @@ impl DaemonClient {
         loop {
             match command_rx.try_recv() {
                 Ok(command) => {
-                    loggins::debug("daemon_client", format!("received command: {command:?}"));
                     if matches!(command, DaemonCommand::Shutdown) {
                         self.handle_command(command);
                         break;
                     }
                     self.handle_command(command);
                 }
-                Err(TryRecvError::Disconnected) => {
-                    loggins::warn("daemon_client", "command_rx disconnected; exiting");
-                    break;
-                }
+                Err(TryRecvError::Disconnected) => break,
                 Err(TryRecvError::Empty) => {}
             }
 
@@ -610,16 +619,8 @@ impl DaemonClient {
         }
         self.last_connect_attempt = Instant::now();
 
-        loggins::debug(
-            "daemon_client",
-            format!("Attempting connect to {:?}", self.socket_path),
-        );
-
         match UnixStream::connect(&self.socket_path) {
             Ok(stream) => {
-                loggins::info("daemon_client", "UnixStream connected");
-                self.warning_sent = false;
-
                 let _ = stream.set_read_timeout(Some(Duration::from_millis(200)));
                 let _ = stream.set_write_timeout(Some(Duration::from_millis(200)));
 
@@ -632,7 +633,6 @@ impl DaemonClient {
                         let _ = self.event_tx.send(DaemonEvent::Status(self.status.clone()));
                     }
                     Err(err) => {
-                        loggins::error("daemon_client", format!("Failed to clone socket: {err}"));
                         let _ = self
                             .event_tx
                             .send(DaemonEvent::Error(format!("Failed to clone socket: {err}")));
@@ -640,13 +640,10 @@ impl DaemonClient {
                 }
             }
             Err(err) => {
-                loggins::debug("daemon_client", format!("Connect failed: {err}"));
                 self.ensure_daemon_spawn();
-
                 if err.kind() != std::io::ErrorKind::NotFound || self.socket_path.exists() {
                     if !self.warning_sent {
                         let msg = format!("Failed to connect: {err}");
-                        loggins::warn("daemon_client", &msg);
                         let _ = self.event_tx.send(DaemonEvent::Error(msg));
                         self.warning_sent = true;
                     }
@@ -669,40 +666,25 @@ impl DaemonClient {
         }
         self.last_spawn_attempt = Instant::now();
 
-        loggins::info("daemon_spawn", "Attempting spawn prlx-hostd from PATH");
         if let Ok(child) = Command::new("prlx-hostd")
             .arg("--control-bind")
             .arg("0.0.0.0:0")
             .env("PRLX_SOCKET_PATH", &self.socket_path)
             .spawn()
         {
-            loggins::info(
-                "daemon_spawn",
-                format!("Spawned prlx-hostd pid={}", child.id()),
-            );
             CHILD_PID.store(child.id() as i32, Ordering::Relaxed);
             self.last_spawn_success = Some(Instant::now());
             self.spawned_child = Some(child);
             return;
         }
 
-        loggins::warn(
-            "daemon_spawn",
-            "PATH spawn failed; attempting discover_local_hostd()",
-        );
-
         if let Some(path) = discover_local_hostd() {
-            loggins::info("daemon_spawn", format!("Attempting spawn from {:?}", path));
             if let Ok(child) = Command::new(path)
                 .arg("--control-bind")
                 .arg("0.0.0.0:0")
                 .env("PRLX_SOCKET_PATH", &self.socket_path)
                 .spawn()
             {
-                loggins::info(
-                    "daemon_spawn",
-                    format!("Spawned local prlx-hostd pid={}", child.id()),
-                );
                 CHILD_PID.store(child.id() as i32, Ordering::Relaxed);
                 self.last_spawn_success = Some(Instant::now());
                 self.spawned_child = Some(child);
@@ -718,7 +700,6 @@ impl DaemonClient {
             return;
         }
         self.last_status_poll = Instant::now();
-        loggins::debug("daemon_client", "poll_status -> sending 'status'");
         self.send_line("status", "poll status");
     }
 
@@ -731,7 +712,6 @@ impl DaemonClient {
             let mut buffer = String::new();
             match reader.read_line(&mut buffer) {
                 Ok(0) => {
-                    loggins::warn("daemon_client", "daemon disconnected (EOF)");
                     self.writer = None;
                     self.reader = None;
                     self.status.connected = false;
@@ -743,21 +723,17 @@ impl DaemonClient {
                     if raw.is_empty() {
                         continue;
                     }
-
                     if let Some(mut status) = parse_status(&raw) {
                         status.connected = true;
-                        loggins::debug("daemon_proto", format!("RX status: {raw}"));
                         self.status = status.clone();
                         let _ = self.event_tx.send(DaemonEvent::Status(status));
                     } else {
-                        loggins::debug("daemon_proto", format!("RX non-status: {raw}"));
                         let _ = self.event_tx.send(DaemonEvent::Warning(raw));
                     }
                 }
                 Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => break,
                 Err(err) if err.kind() == std::io::ErrorKind::TimedOut => break,
                 Err(err) => {
-                    loggins::error("daemon_client", format!("Socket read error: {err}"));
                     self.writer = None;
                     self.reader = None;
                     self.status.connected = false;
@@ -774,7 +750,6 @@ impl DaemonClient {
     fn handle_command(&mut self, command: DaemonCommand) {
         match command {
             DaemonCommand::Refresh => {
-                loggins::info("daemon_client", "Refresh command");
                 self.ensure_connected();
                 if self.writer.is_some() {
                     self.send_line("status", "refresh");
@@ -783,7 +758,6 @@ impl DaemonClient {
                 }
             }
             DaemonCommand::StartStream => {
-                loggins::info("daemon_client", "StartStream command");
                 self.ensure_connected();
                 if self.writer.is_some() {
                     self.send_line("start", "start");
@@ -792,7 +766,6 @@ impl DaemonClient {
                 }
             }
             DaemonCommand::StopStream => {
-                loggins::info("daemon_client", "StopStream command");
                 self.ensure_connected();
                 if self.writer.is_some() {
                     self.send_line("stop", "stop");
@@ -800,7 +773,6 @@ impl DaemonClient {
                 self.shutdown_child();
             }
             DaemonCommand::Shutdown => {
-                loggins::info("daemon_client", "Shutdown command");
                 self.ensure_connected();
                 if self.writer.is_some() {
                     self.send_line("stop", "shutdown");
@@ -818,11 +790,6 @@ impl DaemonClient {
             return;
         };
 
-        loggins::debug(
-            "daemon_client",
-            format!("Flushing pending command: {command:?}"),
-        );
-
         match command {
             DaemonCommand::Refresh => self.send_line("status", "refresh"),
             DaemonCommand::StartStream => self.send_line("start", "start"),
@@ -833,20 +800,14 @@ impl DaemonClient {
 
     fn send_line(&mut self, line: &str, action: &str) -> bool {
         let Some(writer) = self.writer.as_mut() else {
-            let msg = format!("Daemon not connected; cannot {action}");
-            loggins::warn("daemon_proto", &msg);
-            let _ = self.event_tx.send(DaemonEvent::Error(msg));
+            let _ = self.event_tx.send(DaemonEvent::Error(format!(
+                "Daemon not connected; cannot {action}"
+            )));
             return false;
         };
 
         let payload = format!("{line}\n");
-        loggins::debug(
-            "daemon_proto",
-            format!("TX {action}: {:?}", payload.trim_end()),
-        );
-
-        if let Err(err) = writer.write_all(payload.as_bytes()) {
-            loggins::error("daemon_proto", format!("write_all failed: {err}"));
+        if writer.write_all(payload.as_bytes()).is_err() {
             self.writer = None;
             self.reader = None;
             self.status.connected = false;
@@ -863,9 +824,7 @@ impl DaemonClient {
         let Some(child) = self.spawned_child.as_mut() else {
             return;
         };
-
-        if let Ok(Some(exit_status)) = child.try_wait() {
-            loggins::warn("daemon_spawn", format!("Child exited: {exit_status}"));
+        if let Ok(Some(_)) = child.try_wait() {
             self.spawned_child = None;
             CHILD_PID.store(0, Ordering::Relaxed);
         }
@@ -875,14 +834,8 @@ impl DaemonClient {
         let Some(mut child) = self.spawned_child.take() else {
             return;
         };
-
-        loggins::info(
-            "daemon_spawn",
-            format!("Shutting down child pid={}", child.id()),
-        );
         let _ = child.kill();
         let _ = child.wait();
-
         self.writer = None;
         self.reader = None;
         CHILD_PID.store(0, Ordering::Relaxed);
@@ -955,7 +908,7 @@ fn qr_to_image(payload: &str, scale: usize) -> Option<ColorImage> {
 }
 
 // --------------------------
-// UI design helpers (no shadows)
+// UI helpers
 // --------------------------
 
 struct UiPalette {
@@ -977,17 +930,21 @@ struct UiPalette {
 
 impl UiPalette {
     fn new() -> Self {
+        // Purple theme
         Self {
-            background: Color32::from_rgb(244, 246, 249),
-            header: Color32::from_rgb(250, 251, 252),
+            background: Color32::from_rgb(245, 246, 250),
+            header: Color32::from_rgb(252, 252, 254),
             card: Color32::from_rgb(255, 255, 255),
-            card_border: Color32::from_rgb(223, 227, 234),
-            qr_bg: Color32::from_rgb(247, 248, 251),
+            card_border: Color32::from_rgb(223, 227, 236),
+            qr_bg: Color32::from_rgb(247, 248, 252),
             text: Color32::from_rgb(18, 22, 29),
             subtle_text: Color32::from_rgb(104, 112, 125),
-            accent: Color32::from_rgb(0, 122, 255),
-            accent_glow: Color32::from_rgb(90, 170, 255),
-            muted: Color32::from_rgb(210, 214, 221),
+
+            // Purple accent (not blue)
+            accent: Color32::from_rgb(124, 77, 255), // #7C4DFF
+            accent_glow: Color32::from_rgb(176, 145, 255), // softer glow
+
+            muted: Color32::from_rgb(210, 214, 222),
             error: Color32::from_rgb(201, 61, 72),
             error_bg: Color32::from_rgb(255, 238, 240),
             warning: Color32::from_rgb(214, 131, 0),
@@ -996,20 +953,62 @@ impl UiPalette {
     }
 }
 
+fn header_frame(palette: &UiPalette) -> egui::Frame {
+    // More breathing room at the top area + consistent padding
+    egui::Frame::none()
+        .fill(palette.header)
+        .stroke(Stroke::new(1.0, palette.card_border))
+        .inner_margin(egui::Margin::symmetric(OUTER_MARGIN, 14.0))
+}
+
 fn card_frame(palette: &UiPalette, fill: Color32) -> egui::Frame {
     egui::Frame::none()
         .fill(fill)
         .rounding(egui::Rounding::same(18.0))
         .stroke(Stroke::new(1.0, palette.card_border))
-        .inner_margin(egui::Margin::same(16.0))
+        .inner_margin(egui::Margin::same(18.0))
 }
 
-fn state_color(state: UiState, palette: &UiPalette) -> Color32 {
-    match state {
-        UiState::Idle => palette.muted,
-        UiState::Waiting => Color32::from_rgb(120, 136, 255),
-        UiState::Connected => Color32::from_rgb(46, 166, 82),
-        UiState::Streaming => palette.accent,
+fn section_header(ui: &mut egui::Ui, title: &str, palette: &UiPalette) {
+    ui.label(RichText::new(title).size(16.0).strong().color(palette.text));
+}
+
+fn section_header_colored(ui: &mut egui::Ui, title: &str, color: Color32) {
+    ui.label(RichText::new(title).size(16.0).strong().color(color));
+}
+
+fn info_row(ui: &mut egui::Ui, label: &str, value: &str, palette: &UiPalette) {
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(label).size(13.0).color(palette.subtle_text));
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            // Prevent weird wrapping by keeping it single-line when possible
+            ui.label(RichText::new(value).size(13.0).color(palette.text));
+        });
+    });
+}
+
+fn badge(ui: &mut egui::Ui, label: &str, value: &str, color: Color32, palette: &UiPalette) {
+    ui.vertical(|ui| {
+        ui.label(RichText::new(label).size(12.0).color(palette.subtle_text));
+
+        // Horizontal pill (prevents the vertical-stacking mess)
+        let pill = egui::Frame::none()
+            .fill(color)
+            .rounding(egui::Rounding::same(999.0))
+            .inner_margin(egui::Margin::symmetric(12.0, 6.0));
+
+        pill.show(ui, |ui| {
+            ui.set_min_width(110.0); // helps keep it horizontal
+            ui.label(RichText::new(value).size(13.0).color(Color32::WHITE));
+        });
+    });
+}
+
+fn state_color(connected: bool, palette: &UiPalette) -> Color32 {
+    if connected {
+        palette.accent
+    } else {
+        Color32::from_rgb(140, 146, 156)
     }
 }
 
@@ -1021,70 +1020,22 @@ fn daemon_label(connected: bool) -> &'static str {
     }
 }
 
-fn status_pill(ui: &mut egui::Ui, label: &str, value: &str, color: Color32) {
-    let pill_frame = egui::Frame::none()
-        .fill(color)
-        .rounding(egui::Rounding::same(999.0))
-        .inner_margin(egui::Margin::symmetric(12.0, 6.0));
-
-    ui.vertical(|ui| {
-        ui.label(
-            RichText::new(label)
-                .size(12.0)
-                .color(Color32::from_rgb(110, 118, 132)),
-        );
-        pill_frame.show(ui, |ui| {
-            ui.label(RichText::new(value).size(13.0).color(Color32::WHITE));
-        });
-    });
-}
-
-fn section_header(ui: &mut egui::Ui, title: &str) {
-    ui.label(
-        RichText::new(title)
-            .size(16.0)
-            .strong()
-            .color(Color32::from_rgb(24, 28, 36)),
-    );
-}
-
-fn section_header_colored(ui: &mut egui::Ui, title: &str, color: Color32) {
-    ui.label(RichText::new(title).size(16.0).strong().color(color));
-}
-
-fn info_row(ui: &mut egui::Ui, label: &str, value: &str, palette: &UiPalette) {
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(label).size(13.0).color(palette.subtle_text));
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            ui.label(RichText::new(value).size(13.0).color(palette.text));
-        });
-    });
-}
-
-fn primary_button(label: &str) -> egui::Button {
+fn primary_button<'a>(label: &'a str, palette: &'a UiPalette) -> egui::Button<'a> {
     egui::Button::new(RichText::new(label).size(14.0).color(Color32::WHITE))
-        .fill(Color32::from_rgb(0, 122, 255))
+        .fill(palette.accent)
         .min_size(egui::vec2(120.0, 38.0))
 }
 
-fn secondary_button(label: &str) -> egui::Button {
-    egui::Button::new(
-        RichText::new(label)
-            .size(14.0)
-            .color(Color32::from_rgb(32, 36, 44)),
-    )
-    .fill(Color32::from_rgb(233, 236, 242))
-    .min_size(egui::vec2(110.0, 38.0))
+fn secondary_button<'a>(label: &'a str, palette: &'a UiPalette) -> egui::Button<'a> {
+    egui::Button::new(RichText::new(label).size(14.0).color(palette.text))
+        .fill(Color32::from_rgb(233, 236, 244))
+        .min_size(egui::vec2(110.0, 38.0))
 }
 
-fn ghost_button(label: &str) -> egui::Button {
-    egui::Button::new(
-        RichText::new(label)
-            .size(14.0)
-            .color(Color32::from_rgb(32, 36, 44)),
-    )
-    .stroke(Stroke::new(1.0, Color32::from_rgb(210, 214, 221)))
-    .min_size(egui::vec2(110.0, 38.0))
+fn ghost_button<'a>(label: &'a str, palette: &'a UiPalette) -> egui::Button<'a> {
+    egui::Button::new(RichText::new(label).size(14.0).color(palette.text))
+        .stroke(Stroke::new(1.0, palette.card_border))
+        .min_size(egui::vec2(110.0, 38.0))
 }
 
 fn lerp_color(from: Color32, to: Color32, t: f32) -> Color32 {

@@ -6,6 +6,7 @@
 - *(stream)* Initial test run sucessful
 - *(stream)* Initial android app started
 - *(ui)* Improved the design of the ui
+- *(ui)* Improved the design of the ui 2
 
 ### 🐛 Bug Fixes
 
