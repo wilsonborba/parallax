@@ -32,8 +32,8 @@ const SPAWN_RETRY_DELAY: Duration = Duration::from_secs(10);
 static CHILD_PID: AtomicI32 = AtomicI32::new(0);
 
 // Layout constants (tune here)
-const OUTER_MARGIN: f32 = 16.0;
-const CARD_GAP: f32 = 16.0;
+const OUTER_MARGIN: f32 = 20.0;
+const CARD_GAP: f32 = 18.0;
 const SECTION_GAP: f32 = 14.0;
 
 fn main() -> eframe::Result<()> {
@@ -328,7 +328,7 @@ impl eframe::App for HostUiApp {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.spacing_mut().item_spacing.x = 10.0;
 
-                        badge(
+                        header_pill(
                             ui,
                             "Daemon",
                             daemon_label(self.status.connected),
@@ -336,7 +336,7 @@ impl eframe::App for HostUiApp {
                             &palette,
                         );
 
-                        badge(ui, "State", self.status.state.label(), accent, &palette);
+                        header_pill(ui, "State", self.status.state.label(), accent, &palette);
                     });
                 });
 
@@ -370,28 +370,20 @@ impl eframe::App for HostUiApp {
 
                         ui.add_space(SECTION_GAP);
 
-                        if self.status.state == UiState::Streaming {
-                            ui.add(
-                                egui::ProgressBar::new(1.0)
-                                    .desired_width(f32::INFINITY)
-                                    .fill(accent)
-                                    .text("Streaming"),
-                            );
-                        } else if self.status.connected {
-                            ui.add(
-                                egui::ProgressBar::new(0.70)
-                                    .desired_width(f32::INFINITY)
-                                    .fill(lerp_color(palette.accent, palette.accent_glow, 0.35))
-                                    .text("Ready"),
-                            );
-                        } else {
-                            ui.add(
-                                egui::ProgressBar::new(0.30)
-                                    .desired_width(f32::INFINITY)
-                                    .fill(palette.muted)
-                                    .text("Connecting…"),
-                            );
-                        }
+                        let (label, color) = match (self.status.connected, self.status.state) {
+                            (false, _) => ("Connecting…", palette.muted),
+                            (true, UiState::Streaming) => ("Streaming", palette.accent),
+                            (true, UiState::Waiting) => (
+                                "Waiting",
+                                lerp_color(palette.accent, palette.accent_glow, 0.35),
+                            ),
+                            (true, _) => (
+                                "Ready",
+                                lerp_color(palette.accent, palette.accent_glow, 0.25),
+                            ),
+                        };
+
+                        status_chip(ui, label, color);
                     });
 
                     card_frame(&palette, palette.card).show(left, |ui| {
@@ -957,16 +949,14 @@ fn header_frame(palette: &UiPalette) -> egui::Frame {
     // More breathing room at the top area + consistent padding
     egui::Frame::none()
         .fill(palette.header)
-        .stroke(Stroke::new(1.0, palette.card_border))
-        .inner_margin(egui::Margin::symmetric(OUTER_MARGIN, 14.0))
+        .inner_margin(egui::Margin::symmetric(OUTER_MARGIN, 16.0))
 }
 
 fn card_frame(palette: &UiPalette, fill: Color32) -> egui::Frame {
     egui::Frame::none()
         .fill(fill)
         .rounding(egui::Rounding::same(18.0))
-        .stroke(Stroke::new(1.0, palette.card_border))
-        .inner_margin(egui::Margin::same(18.0))
+        .inner_margin(egui::Margin::same(20.0))
 }
 
 fn section_header(ui: &mut egui::Ui, title: &str, palette: &UiPalette) {
@@ -987,21 +977,38 @@ fn info_row(ui: &mut egui::Ui, label: &str, value: &str, palette: &UiPalette) {
     });
 }
 
-fn badge(ui: &mut egui::Ui, label: &str, value: &str, color: Color32, palette: &UiPalette) {
-    ui.vertical(|ui| {
-        ui.label(RichText::new(label).size(12.0).color(palette.subtle_text));
+fn header_pill(ui: &mut egui::Ui, label: &str, value: &str, color: Color32, palette: &UiPalette) {
+    ui.horizontal(|ui| {
+        ui.add(
+            egui::Label::new(RichText::new(label).size(12.0).color(palette.subtle_text))
+                .wrap(false),
+        );
 
-        // Horizontal pill (prevents the vertical-stacking mess)
         let pill = egui::Frame::none()
             .fill(color)
             .rounding(egui::Rounding::same(999.0))
             .inner_margin(egui::Margin::symmetric(12.0, 6.0));
 
         pill.show(ui, |ui| {
-            ui.set_min_width(110.0); // helps keep it horizontal
-            ui.label(RichText::new(value).size(13.0).color(Color32::WHITE));
+            ui.add(
+                egui::Label::new(RichText::new(value).size(13.0).color(Color32::WHITE))
+                    .wrap(false),
+            );
         });
     });
+}
+
+fn status_chip(ui: &mut egui::Ui, text: &str, fill: Color32) {
+    let frame = egui::Frame::none()
+        .fill(fill)
+        .rounding(egui::Rounding::same(999.0))
+        .inner_margin(egui::Margin::symmetric(12.0, 6.0));
+
+    frame.show(ui, |ui| {
+        ui.label(RichText::new(text).size(13.0).color(Color32::WHITE));
+    });
+
+    ui.add_space(4.0);
 }
 
 fn state_color(connected: bool, palette: &UiPalette) -> Color32 {
