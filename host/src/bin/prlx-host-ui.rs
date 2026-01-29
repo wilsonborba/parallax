@@ -1,8 +1,8 @@
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::process::{Child, Command};
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::time::{Duration, Instant};
 
 use eframe::egui::{self, Color32, ColorImage, RichText, TextureHandle};
@@ -104,6 +104,12 @@ impl DaemonHandle {
     }
 }
 
+impl Drop for DaemonHandle {
+    fn drop(&mut self) {
+        let _ = self.command_tx.send(DaemonCommand::Shutdown);
+    }
+}
+
 struct HostUiApp {
     daemon: DaemonHandle,
     status: DaemonStatus,
@@ -188,6 +194,7 @@ impl eframe::App for HostUiApp {
                     .add_enabled(self.status.state != UiState::Streaming, egui::Button::new("Start"))
                     .clicked()
                 {
+                    eprintln!("UI: Start clicked");
                     self.daemon.send(DaemonCommand::StartStream);
                 }
 
@@ -195,10 +202,12 @@ impl eframe::App for HostUiApp {
                     .add_enabled(self.status.state == UiState::Streaming, egui::Button::new("Stop"))
                     .clicked()
                 {
+                    eprintln!("UI: Stop clicked");
                     self.daemon.send(DaemonCommand::StopStream);
                 }
 
                 if ui.button("Refresh").clicked() {
+                    eprintln!("UI: Refresh clicked");
                     self.daemon.send(DaemonCommand::Refresh);
                 }
             });
@@ -238,6 +247,7 @@ struct DaemonClient {
     status: DaemonStatus,
     writer: Option<UnixStream>,
     reader: Option<BufReader<UnixStream>>,
+    spawned_child: Option<Child>,
 }
 
 impl DaemonClient {
@@ -252,27 +262,38 @@ impl DaemonClient {
             status: DaemonStatus::default(),
             writer: None,
             reader: None,
+            spawned_child: None,
         }
     }
 
     fn run(&mut self, command_rx: Receiver<DaemonCommand>) {
         loop {
-            if let Ok(command) = command_rx.try_recv() {
-                if matches!(command, DaemonCommand::Shutdown) {
+            match command_rx.try_recv() {
+                Ok(command) => {
+                    if matches!(command, DaemonCommand::Shutdown) {
+                        self.handle_command(command);
+                        break;
+                    }
+                    self.handle_command(command);
+                }
+                Err(TryRecvError::Disconnected) => {
                     break;
                 }
-                self.handle_command(command);
+                Err(TryRecvError::Empty) => {}
             }
 
             if self.writer.is_none() {
                 self.ensure_connected();
             }
 
+            self.refresh_child_status();
             self.poll_status();
             self.read_responses();
 
             std::thread::sleep(Duration::from_millis(80));
         }
+
+        self.shutdown_child();
     }
 
     fn ensure_connected(&mut self) {
@@ -300,14 +321,19 @@ impl DaemonClient {
             }
             Err(err) => {
                 self.ensure_daemon_spawn();
-                let _ = self
-                    .event_tx
-                    .send(DaemonEvent::Error(format!("Failed to connect: {err}")));
+                if err.kind() != std::io::ErrorKind::NotFound || self.socket_path.exists() {
+                    let _ = self
+                        .event_tx
+                        .send(DaemonEvent::Error(format!("Failed to connect: {err}")));
+                }
             }
         }
     }
 
     fn ensure_daemon_spawn(&mut self) {
+        if self.spawned_child.is_some() {
+            return;
+        }
         if self.last_spawn_attempt.elapsed() < SPAWN_INTERVAL {
             return;
         }
@@ -318,28 +344,22 @@ impl DaemonClient {
         }
         self.last_spawn_attempt = Instant::now();
 
-        if Command::new("prlx-hostd").spawn().is_ok() {
+        if let Ok(child) = Command::new("prlx-hostd")
+            .env("PRLX_SOCKET_PATH", &self.socket_path)
+            .spawn()
+        {
             self.last_spawn_success = Some(Instant::now());
+            self.spawned_child = Some(child);
             return;
         }
 
         if let Some(path) = discover_local_hostd() {
-            if Command::new(path).spawn().is_ok() {
+            if let Ok(child) = Command::new(path)
+                .env("PRLX_SOCKET_PATH", &self.socket_path)
+                .spawn()
+            {
                 self.last_spawn_success = Some(Instant::now());
-                return;
-            }
-        }
-
-        if let Some(repo_root) = find_repo_root() {
-            let _ = Command::new("cargo")
-                .arg("build")
-                .arg("--bin")
-                .arg("prlx-hostd")
-                .current_dir(&repo_root)
-                .status();
-            let candidate = repo_root.join("target/debug/prlx-hostd");
-            if candidate.exists() && Command::new(candidate).spawn().is_ok() {
-                self.last_spawn_success = Some(Instant::now());
+                self.spawned_child = Some(child);
             }
         }
     }
@@ -352,7 +372,7 @@ impl DaemonClient {
             return;
         }
         self.last_status_poll = Instant::now();
-        self.send_line("status");
+        self.send_line("status", "poll status");
     }
 
     fn read_responses(&mut self) {
@@ -386,23 +406,68 @@ impl DaemonClient {
 
     fn handle_command(&mut self, command: DaemonCommand) {
         match command {
-            DaemonCommand::Refresh => self.send_line("status"),
-            DaemonCommand::StartStream => self.send_line("start"),
-            DaemonCommand::StopStream => self.send_line("stop"),
-            DaemonCommand::Shutdown => {}
+            DaemonCommand::Refresh => {
+                eprintln!("DaemonClient: Refresh command");
+                self.ensure_connected();
+                self.send_line("status", "refresh");
+            }
+            DaemonCommand::StartStream => {
+                eprintln!("DaemonClient: StartStream command");
+                self.ensure_connected();
+                self.send_line("start", "start");
+            }
+            DaemonCommand::StopStream => {
+                eprintln!("DaemonClient: StopStream command");
+                self.ensure_connected();
+                self.send_line("stop", "stop");
+                self.shutdown_child();
+            }
+            DaemonCommand::Shutdown => {
+                eprintln!("DaemonClient: Shutdown command");
+                self.ensure_connected();
+                self.send_line("stop", "shutdown");
+                self.shutdown_child();
+            }
         }
     }
 
-    fn send_line(&mut self, line: &str) {
+    fn send_line(&mut self, line: &str, action: &str) -> bool {
         let Some(writer) = self.writer.as_mut() else {
-            return;
+            let _ = self.event_tx.send(DaemonEvent::Error(format!(
+                "Daemon not connected; cannot {action}"
+            )));
+            return false;
         };
 
         let payload = format!("{line}\n");
         if writer.write_all(payload.as_bytes()).is_err() {
             self.writer = None;
             self.reader = None;
+            let _ = self
+                .event_tx
+                .send(DaemonEvent::Error(format!("Failed to send {action} command")));
+            return false;
         }
+        true
+    }
+
+    fn refresh_child_status(&mut self) {
+        let Some(child) = self.spawned_child.as_mut() else {
+            return;
+        };
+        if let Ok(Some(_)) = child.try_wait() {
+            self.spawned_child = None;
+        }
+    }
+
+    fn shutdown_child(&mut self) {
+        let Some(mut child) = self.spawned_child.take() else {
+            return;
+        };
+        let _ = child.kill();
+        let _ = child.wait();
+        self.writer = None;
+        self.reader = None;
     }
 }
 
@@ -480,38 +545,5 @@ fn discover_local_hostd() -> Option<PathBuf> {
     if candidate.exists() {
         return Some(candidate);
     }
-    let repo_root = find_repo_root()?;
-    let candidate = repo_root.join("target/debug/prlx-hostd");
-    if candidate.exists() {
-        return Some(candidate);
-    }
     None
-}
-
-fn find_repo_root() -> Option<PathBuf> {
-    let mut cursor = std::env::current_exe().ok()?.parent()?.to_path_buf();
-    for _ in 0..6 {
-        if cursor.join("Cargo.toml").exists() {
-            return Some(cursor);
-        }
-        if let Some(parent) = cursor.parent() {
-            cursor = parent.to_path_buf();
-        } else {
-            break;
-        }
-    }
-    std::env::current_dir().ok().and_then(|dir| {
-        let mut cursor = dir;
-        for _ in 0..6 {
-            if cursor.join("Cargo.toml").exists() {
-                return Some(cursor);
-            }
-            if let Some(parent) = cursor.parent() {
-                cursor = parent.to_path_buf();
-            } else {
-                break;
-            }
-        }
-        None
-    })
 }

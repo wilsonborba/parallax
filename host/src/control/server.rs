@@ -19,6 +19,7 @@ use crate::net;
 use crate::stream;
 
 const DEFAULT_SOCKET_PATH: &str = "~/.local/share/prlx/prlx.sock";
+const SOCKET_ENV_VAR: &str = "PRLX_SOCKET_PATH";
 #[derive(Debug, Clone)]
 pub struct StreamConfig {
     pub display: String,
@@ -184,7 +185,7 @@ pub fn run_with_shutdown(
         )),
     }));
 
-    let socket_path = expand_socket_path(DEFAULT_SOCKET_PATH);
+    let socket_path = resolve_socket_path();
     let status_stream_controller = Arc::clone(&stream_controller);
     let status_state = Arc::clone(&daemon_status);
     let status_running = Arc::clone(&running);
@@ -479,4 +480,9 @@ fn expand_socket_path(path: &str) -> PathBuf {
         }
     }
     PathBuf::from(path)
+}
+
+fn resolve_socket_path() -> PathBuf {
+    let candidate = std::env::var(SOCKET_ENV_VAR).unwrap_or_else(|_| DEFAULT_SOCKET_PATH.to_string());
+    expand_socket_path(&candidate)
 }
