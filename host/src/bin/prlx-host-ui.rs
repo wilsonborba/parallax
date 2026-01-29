@@ -318,9 +318,11 @@ impl DaemonClient {
             }
             Err(err) => {
                 self.ensure_daemon_spawn();
-                let _ = self
-                    .event_tx
-                    .send(DaemonEvent::Error(format!("Failed to connect: {err}")));
+                if err.kind() != std::io::ErrorKind::NotFound || self.socket_path.exists() {
+                    let _ = self
+                        .event_tx
+                        .send(DaemonEvent::Error(format!("Failed to connect: {err}")));
+                }
             }
         }
     }
@@ -339,14 +341,20 @@ impl DaemonClient {
         }
         self.last_spawn_attempt = Instant::now();
 
-        if let Ok(child) = Command::new("prlx-hostd").spawn() {
+        if let Ok(child) = Command::new("prlx-hostd")
+            .env("PRLX_SOCKET_PATH", &self.socket_path)
+            .spawn()
+        {
             self.last_spawn_success = Some(Instant::now());
             self.spawned_child = Some(child);
             return;
         }
 
         if let Some(path) = discover_local_hostd() {
-            if let Ok(child) = Command::new(path).spawn() {
+            if let Ok(child) = Command::new(path)
+                .env("PRLX_SOCKET_PATH", &self.socket_path)
+                .spawn()
+            {
                 self.last_spawn_success = Some(Instant::now());
                 self.spawned_child = Some(child);
             }
