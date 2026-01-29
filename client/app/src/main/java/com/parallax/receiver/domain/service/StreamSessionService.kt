@@ -178,11 +178,12 @@ class StreamSessionService(
         if (controlSession != null) {
             return true
         }
+        val pairingToken = config.accessPin.ifBlank { config.pairingToken }
         return try {
             val session = controlClient.openSession(
                 config.host,
                 config.controlPort,
-                config.pairingToken,
+                pairingToken,
                 config.streamPort,
             )
             session.startStream()

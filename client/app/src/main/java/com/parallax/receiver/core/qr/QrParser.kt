@@ -2,13 +2,13 @@ package com.parallax.receiver.core.qr
 
 import java.net.URI
 
-data class PrlxQrEndpoint(
+data class QrEndpoint(
     val host: String,
     val controlPort: Int,
 )
 
-object PrlxQrParser {
-    fun parse(payload: String): PrlxQrEndpoint? {
+object QrParser {
+    fun parse(payload: String): QrEndpoint? {
         val trimmed = payload.trim()
         if (trimmed.isEmpty()) {
             return null
@@ -22,6 +22,6 @@ object PrlxQrParser {
         if (port <= 0) {
             return null
         }
-        return PrlxQrEndpoint(host = host, controlPort = port)
+        return QrEndpoint(host = host, controlPort = port)
     }
 }
