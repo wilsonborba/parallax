@@ -17,12 +17,12 @@ class ControlClient(
     private val connectTimeoutMillis: Int = DEFAULT_TIMEOUT_MS,
     private val readTimeoutMillis: Int = DEFAULT_TIMEOUT_MS,
 ) {
-    fun openSession(host: String, port: Int, pairingToken: String): ControlSession {
+    fun openSession(host: String, port: Int, pairingToken: String, streamPort: Int): ControlSession {
         val socket = Socket()
         socket.tcpNoDelay = true
         socket.soTimeout = readTimeoutMillis
         socket.connect(InetSocketAddress(host, port), connectTimeoutMillis)
-        val session = ControlSession(socket, pairingToken, logger)
+        val session = ControlSession(socket, pairingToken, streamPort, logger)
         return try {
             session.performHandshake()
             session
@@ -35,6 +35,7 @@ class ControlClient(
     class ControlSession(
         private val socket: Socket,
         private val pairingToken: String,
+        private val streamPort: Int,
         private val logger: Logger,
     ) {
         private val input: InputStream = socket.getInputStream()
@@ -71,7 +72,8 @@ class ControlClient(
                 throw IllegalStateException("Expected hello ack, got ${helloAck.messageType}")
             }
 
-            writeFrame(MessageType.PairRequest, pairingToken.toByteArray())
+            val pairingPayload = "$pairingToken|$streamPort".toByteArray()
+            writeFrame(MessageType.PairRequest, pairingPayload)
             val pairingResponse = readFrame()
             when (pairingResponse.messageType) {
                 MessageType.AuthChallenge -> {
