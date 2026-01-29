@@ -25,7 +25,6 @@ class StreamSessionService(
     private val connectionDelayMillis: Long = 750L,
     private val settingsStore: SettingsStore,
     private val streamReceiver: H264StreamReceiver = H264StreamReceiver(),
-    private val controlClient: ControlClient = ControlClient(),
     private val logger: Logger = LoggerProvider.logger,
     initialConfig: StreamConfig = StreamConfig(
         host = settingsStore.getHost(),
@@ -36,6 +35,10 @@ class StreamSessionService(
         pairingToken = settingsStore.getPairingToken(),
     ),
 ) {
+    private var controlClient: ControlClient = ControlClient(
+        pairingToken = resolvePairingToken(initialConfig),
+        logger = logger,
+    )
     private val mutableState = MutableStateFlow(
         UiState(
             config = initialConfig,
@@ -150,8 +153,10 @@ class StreamSessionService(
     }
 
     fun setPairingToken(pairingToken: String) {
+        settingsStore.setPairingToken(pairingToken)
+        val updatedConfig = mutableState.value.config.copy(pairingToken = pairingToken)
+        controlClient = ControlClient(pairingToken = resolvePairingToken(updatedConfig), logger = logger)
         mutableState.update { current ->
-            val updatedConfig = current.config.copy(pairingToken = pairingToken)
             current.copy(
                 config = updatedConfig,
                 pairingToken = updatedConfig.pairingToken,
@@ -184,12 +189,12 @@ class StreamSessionService(
         if (controlSession != null) {
             return true
         }
-        val pairingToken = config.accessPin.ifBlank { config.pairingToken }
         return try {
+            val pairingToken = resolvePairingToken(config)
+            controlClient = ControlClient(pairingToken = pairingToken, logger = logger)
             val session = controlClient.openSession(
                 config.host,
                 config.controlPort,
-                pairingToken,
                 config.streamPort,
             )
             session.startStream()
@@ -227,5 +232,9 @@ class StreamSessionService(
 
     private companion object {
         private const val TAG = "StreamSessionService"
+    }
+
+    private fun resolvePairingToken(config: StreamConfig): String {
+        return config.pairingToken.ifBlank { config.accessPin }
     }
 }
