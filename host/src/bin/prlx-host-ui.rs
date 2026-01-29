@@ -32,8 +32,8 @@ const SPAWN_RETRY_DELAY: Duration = Duration::from_secs(10);
 static CHILD_PID: AtomicI32 = AtomicI32::new(0);
 
 // Layout constants (tune here)
-const OUTER_MARGIN: f32 = 16.0;
-const CARD_GAP: f32 = 16.0;
+const OUTER_MARGIN: f32 = 20.0;
+const CARD_GAP: f32 = 18.0;
 const SECTION_GAP: f32 = 14.0;
 
 fn main() -> eframe::Result<()> {
@@ -163,7 +163,8 @@ struct HostUiApp {
     qr_payload: Option<String>,
     shutdown_rx: Receiver<()>,
     shutdown_initiated: bool,
-    visuals_applied: bool,
+    dark_mode: bool,
+    visuals_mode: Option<bool>,
 }
 
 impl HostUiApp {
@@ -185,26 +186,27 @@ impl HostUiApp {
             qr_payload: None,
             shutdown_rx,
             shutdown_initiated: false,
-            visuals_applied: false,
+            dark_mode: false,
+            visuals_mode: None,
         };
 
-        app.apply_visuals_once(&cc.egui_ctx);
         app.refresh_qr_texture(&cc.egui_ctx);
         app.daemon.send(DaemonCommand::Refresh);
         app
     }
 
-    fn apply_visuals_once(&mut self, ctx: &egui::Context) {
-        if self.visuals_applied {
+    fn apply_visuals_if_needed(&mut self, ctx: &egui::Context, palette: &UiPalette) {
+        if self.visuals_mode == Some(self.dark_mode) {
             return;
         }
-        self.visuals_applied = true;
+        self.visuals_mode = Some(self.dark_mode);
 
-        let palette = UiPalette::new();
-
+        let mut visuals = if self.dark_mode {
+            egui::Visuals::dark()
+        } else {
+            egui::Visuals::light()
+        };
         // Older-egui safe visuals (no Shadow types).
-        let mut visuals = egui::Visuals::light();
-
         // Window/panel fill prevents the “black corners” look when using rounding.
         // If your egui version doesn't have these fields, comment them out.
         visuals.window_fill = palette.background;
@@ -222,7 +224,7 @@ impl HostUiApp {
 
         // Strokes
         visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, palette.card_border);
-        visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, Color32::from_rgb(195, 202, 214));
+        visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, palette.card_border);
         visuals.widgets.active.bg_stroke = Stroke::new(1.0, palette.accent);
 
         ctx.set_visuals(visuals);
@@ -259,8 +261,6 @@ impl HostUiApp {
 
 impl eframe::App for HostUiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.apply_visuals_once(ctx);
-
         // Shutdown handling
         if !self.shutdown_initiated {
             match self.shutdown_rx.try_recv() {
@@ -296,7 +296,12 @@ impl eframe::App for HostUiApp {
 
         self.refresh_qr_texture(ctx);
 
-        let palette = UiPalette::new();
+        let palette = if self.dark_mode {
+            UiPalette::dark()
+        } else {
+            UiPalette::light()
+        };
+        self.apply_visuals_if_needed(ctx, &palette);
         let time = ctx.input(|i| i.time) as f32;
         let pulse = (time * 1.0).sin() * 0.5 + 0.5;
         let accent = lerp_color(palette.accent, palette.accent_glow, pulse);
@@ -328,7 +333,12 @@ impl eframe::App for HostUiApp {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.spacing_mut().item_spacing.x = 10.0;
 
-                        badge(
+                        ui.add(egui::Checkbox::new(
+                            &mut self.dark_mode,
+                            RichText::new("Dark").size(12.0).color(palette.subtle_text),
+                        ));
+
+                        header_pill(
                             ui,
                             "Daemon",
                             daemon_label(self.status.connected),
@@ -336,7 +346,7 @@ impl eframe::App for HostUiApp {
                             &palette,
                         );
 
-                        badge(ui, "State", self.status.state.label(), accent, &palette);
+                        header_pill(ui, "State", self.status.state.label(), accent, &palette);
                     });
                 });
 
@@ -370,28 +380,20 @@ impl eframe::App for HostUiApp {
 
                         ui.add_space(SECTION_GAP);
 
-                        if self.status.state == UiState::Streaming {
-                            ui.add(
-                                egui::ProgressBar::new(1.0)
-                                    .desired_width(f32::INFINITY)
-                                    .fill(accent)
-                                    .text("Streaming"),
-                            );
-                        } else if self.status.connected {
-                            ui.add(
-                                egui::ProgressBar::new(0.70)
-                                    .desired_width(f32::INFINITY)
-                                    .fill(lerp_color(palette.accent, palette.accent_glow, 0.35))
-                                    .text("Ready"),
-                            );
-                        } else {
-                            ui.add(
-                                egui::ProgressBar::new(0.30)
-                                    .desired_width(f32::INFINITY)
-                                    .fill(palette.muted)
-                                    .text("Connecting…"),
-                            );
-                        }
+                        let (label, color) = match (self.status.connected, self.status.state) {
+                            (false, _) => ("Connecting…", palette.muted),
+                            (true, UiState::Streaming) => ("Streaming", palette.accent),
+                            (true, UiState::Waiting) => (
+                                "Waiting",
+                                lerp_color(palette.accent, palette.accent_glow, 0.35),
+                            ),
+                            (true, _) => (
+                                "Ready",
+                                lerp_color(palette.accent, palette.accent_glow, 0.25),
+                            ),
+                        };
+
+                        status_chip(ui, label, color);
                     });
 
                     card_frame(&palette, palette.card).show(left, |ui| {
@@ -929,8 +931,7 @@ struct UiPalette {
 }
 
 impl UiPalette {
-    fn new() -> Self {
-        // Purple theme
+    fn light() -> Self {
         Self {
             background: Color32::from_rgb(245, 246, 250),
             header: Color32::from_rgb(252, 252, 254),
@@ -951,22 +952,39 @@ impl UiPalette {
             warning_bg: Color32::from_rgb(255, 246, 230),
         }
     }
+
+    fn dark() -> Self {
+        Self {
+            background: Color32::from_rgb(14, 16, 21),
+            header: Color32::from_rgb(18, 20, 26),
+            card: Color32::from_rgb(24, 27, 34),
+            card_border: Color32::from_rgb(46, 50, 60),
+            qr_bg: Color32::from_rgb(22, 24, 30),
+            text: Color32::from_rgb(236, 239, 244),
+            subtle_text: Color32::from_rgb(156, 164, 178),
+            accent: Color32::from_rgb(124, 77, 255),
+            accent_glow: Color32::from_rgb(176, 145, 255),
+            muted: Color32::from_rgb(70, 75, 88),
+            error: Color32::from_rgb(255, 104, 112),
+            error_bg: Color32::from_rgb(54, 24, 28),
+            warning: Color32::from_rgb(255, 184, 92),
+            warning_bg: Color32::from_rgb(54, 40, 18),
+        }
+    }
 }
 
 fn header_frame(palette: &UiPalette) -> egui::Frame {
     // More breathing room at the top area + consistent padding
     egui::Frame::none()
         .fill(palette.header)
-        .stroke(Stroke::new(1.0, palette.card_border))
-        .inner_margin(egui::Margin::symmetric(OUTER_MARGIN, 14.0))
+        .inner_margin(egui::Margin::symmetric(OUTER_MARGIN, 16.0))
 }
 
-fn card_frame(palette: &UiPalette, fill: Color32) -> egui::Frame {
+fn card_frame(_palette: &UiPalette, fill: Color32) -> egui::Frame {
     egui::Frame::none()
         .fill(fill)
         .rounding(egui::Rounding::same(18.0))
-        .stroke(Stroke::new(1.0, palette.card_border))
-        .inner_margin(egui::Margin::same(18.0))
+        .inner_margin(egui::Margin::same(20.0))
 }
 
 fn section_header(ui: &mut egui::Ui, title: &str, palette: &UiPalette) {
@@ -987,21 +1005,38 @@ fn info_row(ui: &mut egui::Ui, label: &str, value: &str, palette: &UiPalette) {
     });
 }
 
-fn badge(ui: &mut egui::Ui, label: &str, value: &str, color: Color32, palette: &UiPalette) {
-    ui.vertical(|ui| {
-        ui.label(RichText::new(label).size(12.0).color(palette.subtle_text));
+fn header_pill(ui: &mut egui::Ui, label: &str, value: &str, color: Color32, palette: &UiPalette) {
+    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+        ui.add(
+            egui::Label::new(RichText::new(label).size(12.0).color(palette.subtle_text))
+                .wrap(false),
+        );
 
-        // Horizontal pill (prevents the vertical-stacking mess)
         let pill = egui::Frame::none()
             .fill(color)
             .rounding(egui::Rounding::same(999.0))
             .inner_margin(egui::Margin::symmetric(12.0, 6.0));
 
         pill.show(ui, |ui| {
-            ui.set_min_width(110.0); // helps keep it horizontal
-            ui.label(RichText::new(value).size(13.0).color(Color32::WHITE));
+            ui.add(
+                egui::Label::new(RichText::new(value).size(13.0).color(Color32::WHITE))
+                    .wrap(false),
+            );
         });
     });
+}
+
+fn status_chip(ui: &mut egui::Ui, text: &str, fill: Color32) {
+    let frame = egui::Frame::none()
+        .fill(fill)
+        .rounding(egui::Rounding::same(999.0))
+        .inner_margin(egui::Margin::symmetric(12.0, 6.0));
+
+    frame.show(ui, |ui| {
+        ui.label(RichText::new(text).size(13.0).color(Color32::WHITE));
+    });
+
+    ui.add_space(4.0);
 }
 
 fn state_color(connected: bool, palette: &UiPalette) -> Color32 {
