@@ -261,8 +261,6 @@ impl HostUiApp {
 
 impl eframe::App for HostUiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.apply_visuals_once(ctx);
-
         // Shutdown handling
         if !self.shutdown_initiated {
             match self.shutdown_rx.try_recv() {
@@ -335,13 +333,10 @@ impl eframe::App for HostUiApp {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.spacing_mut().item_spacing.x = 10.0;
 
-                        ui.add(
-                            egui::Checkbox::new(
-                                &mut self.dark_mode,
-                                RichText::new("Dark").size(12.0).color(palette.subtle_text),
-                            )
-                            .wrap(false),
-                        );
+                        ui.add(egui::Checkbox::new(
+                            &mut self.dark_mode,
+                            RichText::new("Dark").size(12.0).color(palette.subtle_text),
+                        ));
 
                         header_pill(
                             ui,
@@ -985,7 +980,7 @@ fn header_frame(palette: &UiPalette) -> egui::Frame {
         .inner_margin(egui::Margin::symmetric(OUTER_MARGIN, 16.0))
 }
 
-fn card_frame(palette: &UiPalette, fill: Color32) -> egui::Frame {
+fn card_frame(_palette: &UiPalette, fill: Color32) -> egui::Frame {
     egui::Frame::none()
         .fill(fill)
         .rounding(egui::Rounding::same(18.0))
