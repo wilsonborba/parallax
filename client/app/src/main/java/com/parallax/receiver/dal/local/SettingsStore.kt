@@ -13,6 +13,8 @@ interface SettingsStore {
     fun setControlPort(port: Int)
     fun getAccessPin(): String
     fun setAccessPin(accessPin: String)
+    fun getPairingToken(): String
+    fun setPairingToken(pairingToken: String)
 }
 
 class SharedPreferencesSettingsStore(
@@ -71,6 +73,16 @@ class SharedPreferencesSettingsStore(
             .apply()
     }
 
+    override fun getPairingToken(): String {
+        return sharedPreferences.getString(KEY_PAIRING_TOKEN, DEFAULT_PAIRING_TOKEN) ?: DEFAULT_PAIRING_TOKEN
+    }
+
+    override fun setPairingToken(pairingToken: String) {
+        sharedPreferences.edit()
+            .putString(KEY_PAIRING_TOKEN, pairingToken)
+            .apply()
+    }
+
     private companion object {
         private const val KEY_SCALE = "settings.scale"
         private const val DEFAULT_SCALE = 1.0f
@@ -79,9 +91,11 @@ class SharedPreferencesSettingsStore(
         private const val KEY_CONTROL_PORT = "settings.control_port"
         private const val KEY_LEGACY_PORT = "settings.port"
         private const val KEY_ACCESS_PIN = "settings.access_pin"
+        private const val KEY_PAIRING_TOKEN = "settings.pairing_token"
         private const val DEFAULT_HOST = "127.0.0.1"
         private const val DEFAULT_STREAM_PORT = 5000
         private const val DEFAULT_CONTROL_PORT = 7000
         private const val DEFAULT_ACCESS_PIN = "parallax"
+        private const val DEFAULT_PAIRING_TOKEN = "parallax"
     }
 }

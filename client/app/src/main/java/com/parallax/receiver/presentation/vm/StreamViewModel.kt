@@ -59,6 +59,10 @@ class StreamViewModel(
         setStreamEndpoint.setAccessPin(accessPin)
     }
 
+    fun onPairingTokenChanged(pairingToken: String) {
+        setStreamEndpoint.setPairingToken(pairingToken)
+    }
+
     fun onQrPayloadScanned(payload: String) {
         val endpoint = PrlxQrParser.parse(payload) ?: return
         setStreamEndpoint.setHost(endpoint.host)

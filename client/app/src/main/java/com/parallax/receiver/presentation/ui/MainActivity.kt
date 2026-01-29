@@ -50,6 +50,7 @@ class MainActivity : ComponentActivity() {
                         onStreamPortChanged = streamViewModel::onStreamPortChanged,
                         onControlPortChanged = streamViewModel::onControlPortChanged,
                         onAccessPinChanged = streamViewModel::onAccessPinChanged,
+                        onPairingTokenChanged = streamViewModel::onPairingTokenChanged,
                         onSurfaceAvailable = streamViewModel::onSurfaceAvailable,
                         onSurfaceDestroyed = streamViewModel::onSurfaceDestroyed,
                     )
