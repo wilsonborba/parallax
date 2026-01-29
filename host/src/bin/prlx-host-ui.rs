@@ -1,4 +1,5 @@
 use std::io::{BufRead, BufReader, Write};
+use std::net::TcpListener;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
@@ -15,6 +16,7 @@ const STATUS_POLL_INTERVAL: Duration = Duration::from_secs(2);
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(3);
 const SPAWN_INTERVAL: Duration = Duration::from_secs(5);
 const SPAWN_RETRY_DELAY: Duration = Duration::from_secs(10);
+const EXTERNAL_DAEMON_RETRY_DELAY: Duration = Duration::from_secs(15);
 
 static CHILD_PID: AtomicI32 = AtomicI32::new(0);
 static CTRL_C_HANDLER: Once = Once::new();
@@ -22,10 +24,17 @@ static CTRL_C_HANDLER: Once = Once::new();
 fn main() -> eframe::Result<()> {
     let socket_path = expand_path(DEFAULT_SOCKET_PATH);
     let native_options = eframe::NativeOptions::default();
+    let (shutdown_tx, shutdown_rx) = mpsc::channel();
+    let handler_tx = shutdown_tx.clone();
+    if let Err(err) = ctrlc::set_handler(move || {
+        let _ = handler_tx.send(());
+    }) {
+        eprintln!("Failed to install signal handler: {err}");
+    }
     eframe::run_native(
         "Parallax Host UI",
         native_options,
-        Box::new(|cc| Box::new(HostUiApp::new(cc, socket_path))),
+        Box::new(move |cc| Box::new(HostUiApp::new(cc, socket_path, shutdown_rx))),
     )
 }
 
@@ -69,6 +78,7 @@ impl Default for DaemonStatus {
 enum DaemonEvent {
     Status(DaemonStatus),
     Error(String),
+    Warning(String),
 }
 
 #[derive(Debug)]
@@ -119,24 +129,40 @@ impl Drop for DaemonHandle {
     }
 }
 
+impl Drop for DaemonHandle {
+    fn drop(&mut self) {
+        let _ = self.command_tx.send(DaemonCommand::Shutdown);
+    }
+}
+
 struct HostUiApp {
     daemon: DaemonHandle,
     status: DaemonStatus,
     last_error: Option<String>,
+    last_warning: Option<String>,
     qr_texture: Option<TextureHandle>,
     qr_payload: Option<String>,
+    shutdown_rx: Receiver<()>,
+    shutdown_initiated: bool,
 }
 
 impl HostUiApp {
-    fn new(cc: &eframe::CreationContext<'_>, socket_path: PathBuf) -> Self {
+    fn new(
+        cc: &eframe::CreationContext<'_>,
+        socket_path: PathBuf,
+        shutdown_rx: Receiver<()>,
+    ) -> Self {
         let daemon = DaemonHandle::new(socket_path);
         install_ctrlc_handler(daemon.command_sender());
         let mut app = Self {
             daemon,
             status: DaemonStatus::default(),
             last_error: None,
+            last_warning: None,
             qr_texture: None,
             qr_payload: None,
+            shutdown_rx,
+            shutdown_initiated: false,
         };
         app.refresh_qr_texture(&cc.egui_ctx);
         app.daemon.send(DaemonCommand::Refresh);
@@ -158,11 +184,8 @@ impl HostUiApp {
         }
 
         if let Some(image) = qr_to_image(&payload, 4) {
-            self.qr_texture = Some(ctx.load_texture(
-                "pairing_qr",
-                image,
-                egui::TextureOptions::NEAREST,
-            ));
+            self.qr_texture =
+                Some(ctx.load_texture("pairing_qr", image, egui::TextureOptions::NEAREST));
             self.qr_payload = Some(payload);
         }
     }
@@ -170,13 +193,31 @@ impl HostUiApp {
 
 impl eframe::App for HostUiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if !self.shutdown_initiated {
+            match self.shutdown_rx.try_recv() {
+                Ok(()) => {
+                    self.shutdown_initiated = true;
+                    self.daemon.send(DaemonCommand::Shutdown);
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+                Err(TryRecvError::Empty) => {}
+                Err(TryRecvError::Disconnected) => {
+                    self.shutdown_initiated = true;
+                }
+            }
+        }
+
         while let Some(event) = self.daemon.try_recv() {
             match event {
                 DaemonEvent::Status(status) => {
                     self.status = status;
+                    self.last_warning = None;
                 }
                 DaemonEvent::Error(err) => {
                     self.last_error = Some(err);
+                }
+                DaemonEvent::Warning(warning) => {
+                    self.last_warning = Some(warning);
                 }
             }
         }
@@ -197,11 +238,19 @@ impl eframe::App for HostUiApp {
                 ui.colored_label(Color32::RED, format!("Daemon error: {err}"));
             }
 
+            if let Some(warning) = &self.last_warning {
+                ui.add_space(8.0);
+                ui.colored_label(Color32::YELLOW, warning);
+            }
+
             ui.add_space(16.0);
 
             ui.horizontal(|ui| {
                 if ui
-                    .add_enabled(self.status.state != UiState::Streaming, egui::Button::new("Start"))
+                    .add_enabled(
+                        self.status.state != UiState::Streaming,
+                        egui::Button::new("Start"),
+                    )
                     .clicked()
                 {
                     eprintln!("UI: Start clicked");
@@ -209,7 +258,10 @@ impl eframe::App for HostUiApp {
                 }
 
                 if ui
-                    .add_enabled(self.status.state == UiState::Streaming, egui::Button::new("Stop"))
+                    .add_enabled(
+                        self.status.state == UiState::Streaming,
+                        egui::Button::new("Stop"),
+                    )
                     .clicked()
                 {
                     eprintln!("UI: Stop clicked");
@@ -254,6 +306,7 @@ struct DaemonClient {
     last_connect_attempt: Instant,
     last_spawn_attempt: Instant,
     last_spawn_success: Option<Instant>,
+    spawn_suppressed_until: Option<Instant>,
     status: DaemonStatus,
     writer: Option<UnixStream>,
     reader: Option<BufReader<UnixStream>>,
@@ -269,6 +322,7 @@ impl DaemonClient {
             last_connect_attempt: Instant::now() - RECONNECT_INTERVAL,
             last_spawn_attempt: Instant::now() - SPAWN_INTERVAL,
             last_spawn_success: None,
+            spawn_suppressed_until: None,
             status: DaemonStatus::default(),
             writer: None,
             reader: None,
@@ -314,6 +368,8 @@ impl DaemonClient {
 
         match UnixStream::connect(&self.socket_path) {
             Ok(stream) => {
+                self.warning_sent = false;
+                self.spawn_suppressed_until = None;
                 let _ = stream.set_read_timeout(Some(Duration::from_millis(200)));
                 let _ = stream.set_write_timeout(Some(Duration::from_millis(200)));
                 match stream.try_clone() {
