@@ -4,7 +4,6 @@ import android.view.Surface
 import com.parallax.receiver.core.control.ControlClient
 import com.parallax.receiver.core.logging.Logger
 import com.parallax.receiver.core.logging.LoggerProvider
-import com.parallax.receiver.core.config.CONTROL_PORT_OFFSET
 import com.parallax.receiver.core.streaming.H264StreamReceiver
 import com.parallax.receiver.dal.local.SettingsStore
 import com.parallax.receiver.domain.model.StreamConfig
@@ -30,7 +29,8 @@ class StreamSessionService(
     private val logger: Logger = LoggerProvider.logger,
     initialConfig: StreamConfig = StreamConfig(
         host = settingsStore.getHost(),
-        port = settingsStore.getPort(),
+        streamPort = settingsStore.getStreamPort(),
+        controlPort = settingsStore.getControlPort(),
         scale = settingsStore.getScale(),
         accessPin = settingsStore.getAccessPin(),
     ),
@@ -126,9 +126,15 @@ class StreamSessionService(
         }
     }
 
-    fun setPort(port: Int) {
+    fun setStreamPort(port: Int) {
         mutableState.update { current ->
-            current.copy(config = current.config.copy(port = port))
+            current.copy(config = current.config.copy(streamPort = port))
+        }
+    }
+
+    fun setControlPort(port: Int) {
+        mutableState.update { current ->
+            current.copy(config = current.config.copy(controlPort = port))
         }
     }
 
@@ -140,7 +146,7 @@ class StreamSessionService(
 
     private fun startReceiver(config: StreamConfig, surface: Surface) {
         try {
-            streamReceiver.start(config.port, surface)
+            streamReceiver.start(config.streamPort, surface)
         } catch (e: Exception) {
             logger.error(
                 TAG,
@@ -163,7 +169,7 @@ class StreamSessionService(
             return true
         }
         return try {
-            val session = controlClient.openSession(config.host, config.port + CONTROL_PORT_OFFSET, config.accessPin)
+            val session = controlClient.openSession(config.host, config.controlPort, config.accessPin)
             session.startStream()
             controlSession = session
             true
