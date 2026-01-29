@@ -304,6 +304,7 @@ struct DaemonClient {
     writer: Option<UnixStream>,
     reader: Option<BufReader<UnixStream>>,
     spawned_child: Option<Child>,
+    pending_command: Option<DaemonCommand>,
 }
 
 impl DaemonClient {
@@ -320,6 +321,7 @@ impl DaemonClient {
             writer: None,
             reader: None,
             spawned_child: None,
+            pending_command: None,
         }
     }
 
@@ -343,6 +345,7 @@ impl DaemonClient {
                 self.ensure_connected();
             }
 
+            self.flush_pending_command();
             self.refresh_child_status();
             self.poll_status();
             self.read_responses();
@@ -477,24 +480,59 @@ impl DaemonClient {
             DaemonCommand::Refresh => {
                 eprintln!("DaemonClient: Refresh command");
                 self.ensure_connected();
-                self.send_line("status", "refresh");
+                if self.writer.is_some() {
+                    self.send_line("status", "refresh");
+                } else {
+                    self.pending_command = Some(command);
+                }
             }
             DaemonCommand::StartStream => {
                 eprintln!("DaemonClient: StartStream command");
                 self.ensure_connected();
-                self.send_line("start", "start");
+                if self.writer.is_some() {
+                    self.send_line("start", "start");
+                } else {
+                    self.pending_command = Some(command);
+                }
             }
             DaemonCommand::StopStream => {
                 eprintln!("DaemonClient: StopStream command");
                 self.ensure_connected();
-                self.send_line("stop", "stop");
+                if self.writer.is_some() {
+                    self.send_line("stop", "stop");
+                }
                 self.shutdown_child();
             }
             DaemonCommand::Shutdown => {
                 eprintln!("DaemonClient: Shutdown command");
                 self.ensure_connected();
-                self.send_line("stop", "shutdown");
+                if self.writer.is_some() {
+                    self.send_line("stop", "shutdown");
+                }
                 self.shutdown_child();
+            }
+        }
+    }
+
+    fn flush_pending_command(&mut self) {
+        if self.writer.is_none() {
+            return;
+        }
+        let Some(command) = self.pending_command.take() else {
+            return;
+        };
+        match command {
+            DaemonCommand::Refresh => {
+                self.send_line("status", "refresh");
+            }
+            DaemonCommand::StartStream => {
+                self.send_line("start", "start");
+            }
+            DaemonCommand::StopStream => {
+                self.send_line("stop", "stop");
+            }
+            DaemonCommand::Shutdown => {
+                self.send_line("stop", "shutdown");
             }
         }
     }
