@@ -267,10 +267,11 @@ impl DaemonClient {
         loop {
             match command_rx.try_recv() {
                 Ok(command) => {
-                    self.handle_command(command);
                     if matches!(command, DaemonCommand::Shutdown) {
+                        self.handle_command(command);
                         break;
                     }
+                    self.handle_command(command);
                 }
                 Err(TryRecvError::Disconnected) => {
                     break;
