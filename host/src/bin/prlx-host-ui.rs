@@ -1,4 +1,5 @@
 use std::io::{BufRead, BufReader, Write};
+use std::net::TcpListener;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
@@ -6,6 +7,7 @@ use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::time::{Duration, Instant};
 
 use eframe::egui::{self, Color32, ColorImage, RichText, TextureHandle};
+use host::core::logging;
 use qrcode::QrCode;
 
 const DEFAULT_SOCKET_PATH: &str = "~/.local/share/prlx/prlx.sock";
@@ -13,6 +15,8 @@ const STATUS_POLL_INTERVAL: Duration = Duration::from_secs(2);
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(3);
 const SPAWN_INTERVAL: Duration = Duration::from_secs(5);
 const SPAWN_RETRY_DELAY: Duration = Duration::from_secs(10);
+const EXTERNAL_DAEMON_RETRY_DELAY: Duration = Duration::from_secs(15);
+const LOG_TAG: &str = "host-ui";
 
 fn main() -> eframe::Result<()> {
     let socket_path = expand_path(DEFAULT_SOCKET_PATH);
@@ -71,6 +75,7 @@ impl Default for DaemonStatus {
 enum DaemonEvent {
     Status(DaemonStatus),
     Error(String),
+    Warning(String),
 }
 
 #[derive(Debug)]
@@ -121,6 +126,7 @@ struct HostUiApp {
     daemon: DaemonHandle,
     status: DaemonStatus,
     last_error: Option<String>,
+    last_warning: Option<String>,
     qr_texture: Option<TextureHandle>,
     qr_payload: Option<String>,
     shutdown_rx: Receiver<()>,
@@ -138,6 +144,7 @@ impl HostUiApp {
             daemon,
             status: DaemonStatus::default(),
             last_error: None,
+            last_warning: None,
             qr_texture: None,
             qr_payload: None,
             shutdown_rx,
@@ -193,9 +200,28 @@ impl eframe::App for HostUiApp {
             match event {
                 DaemonEvent::Status(status) => {
                     self.status = status;
+                    self.last_warning = None;
+                    logging::debug(LOG_TAG, format!("Status update: {:?}", self.status.state));
                 }
                 DaemonEvent::Error(err) => {
                     self.last_error = Some(err);
+                    logging::error(
+                        LOG_TAG,
+                        format!(
+                            "Daemon error: {}",
+                            self.last_error.as_deref().unwrap_or("unknown")
+                        ),
+                    );
+                }
+                DaemonEvent::Warning(warning) => {
+                    self.last_warning = Some(warning);
+                    logging::warn(
+                        LOG_TAG,
+                        format!(
+                            "Daemon warning: {}",
+                            self.last_warning.as_deref().unwrap_or("unknown")
+                        ),
+                    );
                 }
             }
         }
@@ -216,6 +242,11 @@ impl eframe::App for HostUiApp {
                 ui.colored_label(Color32::RED, format!("Daemon error: {err}"));
             }
 
+            if let Some(warning) = &self.last_warning {
+                ui.add_space(8.0);
+                ui.colored_label(Color32::YELLOW, warning);
+            }
+
             ui.add_space(16.0);
 
             ui.horizontal(|ui| {
@@ -223,6 +254,7 @@ impl eframe::App for HostUiApp {
                     .add_enabled(self.status.state != UiState::Streaming, egui::Button::new("Start"))
                     .clicked()
                 {
+                    logging::info(LOG_TAG, "Start button clicked");
                     self.daemon.send(DaemonCommand::StartStream);
                 }
 
@@ -230,10 +262,12 @@ impl eframe::App for HostUiApp {
                     .add_enabled(self.status.state == UiState::Streaming, egui::Button::new("Stop"))
                     .clicked()
                 {
+                    logging::info(LOG_TAG, "Stop button clicked");
                     self.daemon.send(DaemonCommand::StopStream);
                 }
 
                 if ui.button("Refresh").clicked() {
+                    logging::debug(LOG_TAG, "Refresh button clicked");
                     self.daemon.send(DaemonCommand::Refresh);
                 }
             });
@@ -270,10 +304,13 @@ struct DaemonClient {
     last_connect_attempt: Instant,
     last_spawn_attempt: Instant,
     last_spawn_success: Option<Instant>,
+    spawn_suppressed_until: Option<Instant>,
     status: DaemonStatus,
     writer: Option<UnixStream>,
     reader: Option<BufReader<UnixStream>>,
     spawned_child: Option<Child>,
+    control_bind: String,
+    warning_sent: bool,
 }
 
 impl DaemonClient {
@@ -285,10 +322,14 @@ impl DaemonClient {
             last_connect_attempt: Instant::now() - RECONNECT_INTERVAL,
             last_spawn_attempt: Instant::now() - SPAWN_INTERVAL,
             last_spawn_success: None,
+            spawn_suppressed_until: None,
             status: DaemonStatus::default(),
             writer: None,
             reader: None,
             spawned_child: None,
+            control_bind: std::env::var("PRLX_CONTROL_BIND")
+                .unwrap_or_else(|_| "0.0.0.0:0".to_string()),
+            warning_sent: false,
         }
     }
 
@@ -330,22 +371,31 @@ impl DaemonClient {
 
         match UnixStream::connect(&self.socket_path) {
             Ok(stream) => {
+                logging::info(
+                    LOG_TAG,
+                    format!("Connected to daemon socket at {}", self.socket_path.display()),
+                );
+                self.warning_sent = false;
+                self.spawn_suppressed_until = None;
                 let _ = stream.set_read_timeout(Some(Duration::from_millis(200)));
                 let _ = stream.set_write_timeout(Some(Duration::from_millis(200)));
                 match stream.try_clone() {
                     Ok(reader_stream) => {
                         self.reader = Some(BufReader::new(reader_stream));
                         self.writer = Some(stream);
+                        logging::debug(LOG_TAG, "Socket reader/writer established");
                         let _ = self.event_tx.send(DaemonEvent::Status(self.status.clone()));
                     }
                     Err(err) => {
                         let _ = self
                             .event_tx
                             .send(DaemonEvent::Error(format!("Failed to clone socket: {err}")));
+                        logging::error(LOG_TAG, format!("Failed to clone socket: {err}"));
                     }
                 }
             }
             Err(err) => {
+                logging::debug(LOG_TAG, format!("Connect attempt failed: {err}"));
                 self.ensure_daemon_spawn();
                 if err.kind() != std::io::ErrorKind::NotFound || self.socket_path.exists() {
                     let _ = self
@@ -360,6 +410,13 @@ impl DaemonClient {
         if self.spawned_child.is_some() {
             return;
         }
+        if let Some(suppressed_until) = self.spawn_suppressed_until {
+            if suppressed_until > Instant::now() {
+                logging::debug(LOG_TAG, "Spawn suppressed due to external daemon detection");
+                return;
+            }
+            self.spawn_suppressed_until = None;
+        }
         if self.last_spawn_attempt.elapsed() < SPAWN_INTERVAL {
             return;
         }
@@ -370,12 +427,32 @@ impl DaemonClient {
         }
         self.last_spawn_attempt = Instant::now();
 
+        if self.attach_existing_socket() {
+            logging::info(LOG_TAG, "Attached to existing daemon via status socket");
+            self.spawn_suppressed_until = Some(Instant::now() + EXTERNAL_DAEMON_RETRY_DELAY);
+            return;
+        }
+
+        if self.control_port_in_use() {
+            logging::warn(LOG_TAG, "Control port already in use; skipping spawn");
+            self.spawn_suppressed_until = Some(Instant::now() + EXTERNAL_DAEMON_RETRY_DELAY);
+            if !self.warning_sent {
+                let _ = self.event_tx.send(DaemonEvent::Warning(
+                    "Host daemon already running".to_string(),
+                ));
+                self.warning_sent = true;
+            }
+            return;
+        }
+
         let mut spawn_errors = Vec::new();
 
         match self.spawn_hostd("prlx-hostd") {
             Ok(child) => {
                 self.last_spawn_success = Some(Instant::now());
                 self.spawned_child = Some(child);
+                self.warning_sent = false;
+                logging::info(LOG_TAG, "Spawned prlx-hostd");
                 return;
             }
             Err(err) => {
@@ -388,6 +465,8 @@ impl DaemonClient {
                 Ok(child) => {
                     self.last_spawn_success = Some(Instant::now());
                     self.spawned_child = Some(child);
+                    self.warning_sent = false;
+                    logging::info(LOG_TAG, "Spawned local prlx-hostd");
                     return;
                 }
                 Err(err) => {
@@ -397,6 +476,10 @@ impl DaemonClient {
         }
 
         if !spawn_errors.is_empty() {
+            logging::error(
+                LOG_TAG,
+                format!("Failed to start daemon: {}", spawn_errors.join("; ")),
+            );
             let _ = self.event_tx.send(DaemonEvent::Error(format!(
                 "Failed to start daemon: {}",
                 spawn_errors.join("; ")
@@ -408,8 +491,91 @@ impl DaemonClient {
         Command::new(path)
             .env("PRLX_SOCKET_PATH", &self.socket_path)
             .arg("--control-bind")
-            .arg("0.0.0.0:0")
+            .arg(&self.control_bind)
             .spawn()
+    }
+
+    fn attach_existing_socket(&mut self) -> bool {
+        if !self.socket_path.exists() {
+            logging::debug(LOG_TAG, "Status socket missing; cannot attach");
+            return false;
+        }
+
+        let stream = match UnixStream::connect(&self.socket_path) {
+            Ok(stream) => stream,
+            Err(err) => {
+                logging::debug(LOG_TAG, format!("Failed to connect to existing socket: {err}"));
+                return false;
+            }
+        };
+
+        let _ = stream.set_read_timeout(Some(Duration::from_millis(200)));
+        let _ = stream.set_write_timeout(Some(Duration::from_millis(200)));
+        let reader_stream = match stream.try_clone() {
+            Ok(reader_stream) => reader_stream,
+            Err(err) => {
+                let _ = self
+                    .event_tx
+                    .send(DaemonEvent::Error(format!("Failed to clone socket: {err}")));
+                logging::error(LOG_TAG, format!("Failed to clone socket: {err}"));
+                return false;
+            }
+        };
+
+        let mut reader = BufReader::new(reader_stream);
+        if stream.write_all(b"status\n").is_err() {
+            logging::debug(LOG_TAG, "Failed to send status probe to existing socket");
+            return false;
+        }
+
+        let mut buffer = String::new();
+        match reader.read_line(&mut buffer) {
+            Ok(0) => return false,
+            Ok(_) => {
+                let Some(status) = parse_status(&buffer) else {
+                    logging::debug(LOG_TAG, "Status response was invalid");
+                    return false;
+                };
+                self.status = status.clone();
+                self.writer = Some(stream);
+                self.reader = Some(reader);
+                self.warning_sent = false;
+                let _ = self.event_tx.send(DaemonEvent::Status(status));
+                true
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => false,
+            Err(err) if err.kind() == std::io::ErrorKind::TimedOut => false,
+            Err(_) => false,
+        }
+    }
+
+    fn control_port_in_use(&mut self) -> bool {
+        let Some((_, port)) = self.control_bind.rsplit_once(':') else {
+            logging::debug(LOG_TAG, format!("Unable to parse control bind {}", self.control_bind));
+            return false;
+        };
+        if port == "0" {
+            return false;
+        }
+
+        match TcpListener::bind(&self.control_bind) {
+            Ok(listener) => {
+                drop(listener);
+                false
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::AddrInUse => true,
+            Err(err) => {
+                let _ = self.event_tx.send(DaemonEvent::Error(format!(
+                    "Failed to check control port {}: {err}",
+                    self.control_bind
+                )));
+                logging::error(
+                    LOG_TAG,
+                    format!("Failed to check control port {}: {err}", self.control_bind),
+                );
+                false
+            }
+        }
     }
 
     fn poll_status(&mut self) {
@@ -454,13 +620,21 @@ impl DaemonClient {
 
     fn handle_command(&mut self, command: DaemonCommand) {
         match command {
-            DaemonCommand::Refresh => self.send_line("status"),
-            DaemonCommand::StartStream => self.send_line("start"),
+            DaemonCommand::Refresh => {
+                logging::debug(LOG_TAG, "Handling refresh command");
+                self.send_line("status");
+            }
+            DaemonCommand::StartStream => {
+                logging::info(LOG_TAG, "Handling start stream command");
+                self.send_line("start");
+            }
             DaemonCommand::StopStream => {
+                logging::info(LOG_TAG, "Handling stop stream command");
                 self.send_line("stop");
                 self.shutdown_child();
             }
             DaemonCommand::Shutdown => {
+                logging::info(LOG_TAG, "Handling shutdown command");
                 self.send_line("stop");
                 self.shutdown_child();
             }
@@ -469,11 +643,14 @@ impl DaemonClient {
 
     fn send_line(&mut self, line: &str) {
         let Some(writer) = self.writer.as_mut() else {
+            logging::debug(LOG_TAG, format!("Skip send; no active writer for {line}"));
             return;
         };
 
         let payload = format!("{line}\n");
+        logging::debug(LOG_TAG, format!("Sending command: {line}"));
         if writer.write_all(payload.as_bytes()).is_err() {
+            logging::error(LOG_TAG, "Failed to write to socket");
             self.writer = None;
             self.reader = None;
         }
@@ -484,6 +661,7 @@ impl DaemonClient {
             return;
         };
         if let Ok(Some(_)) = child.try_wait() {
+            logging::info(LOG_TAG, "Spawned daemon exited");
             self.spawned_child = None;
         }
     }
@@ -492,6 +670,7 @@ impl DaemonClient {
         let Some(mut child) = self.spawned_child.take() else {
             return;
         };
+        logging::info(LOG_TAG, "Shutting down spawned daemon");
         let _ = child.kill();
         let _ = child.wait();
         self.writer = None;
