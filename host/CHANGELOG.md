@@ -10,6 +10,7 @@
 
 - *(borrow)* Fixed a borrow error
 - *(ui)* Added some debug message on ui for debug
+- *(ui)* Fixed the streaming not starting
 
 ### ⚙️ Miscellaneous Tasks
 

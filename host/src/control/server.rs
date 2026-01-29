@@ -1,7 +1,7 @@
 use std::io::{BufRead, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, Ordering},
@@ -18,6 +18,7 @@ use crate::stream;
 
 const DEFAULT_SOCKET_PATH: &str = "~/.local/share/prlx/prlx.sock";
 const SOCKET_ENV_VAR: &str = "PRLX_SOCKET_PATH";
+
 #[derive(Debug, Clone)]
 pub struct StreamConfig {
     pub display: String,
@@ -115,6 +116,7 @@ impl StreamCoordinator for StreamController {
         let thread_stop = Arc::clone(&stop);
         let mut config = self.config.clone();
         config.target_addr = target_addr;
+
         let join = thread::spawn(move || {
             if let Err(err) = run_streaming(config, thread_stop) {
                 eprintln!("Streaming loop exited: {err}");
@@ -131,7 +133,10 @@ impl StreamCoordinator for StreamController {
                 .state
                 .lock()
                 .map_err(|_| "stream lock poisoned".to_string())?;
-            state.handle.take().ok_or("stream not running".to_string())?
+            state
+                .handle
+                .take()
+                .ok_or("stream not running".to_string())?
         };
 
         handle.stop.store(true, Ordering::Relaxed);
@@ -157,12 +162,13 @@ pub fn run(config: ControlConfig) -> Result<(), String> {
     run_with_shutdown(config, running)
 }
 
-pub fn run_with_shutdown(
-    config: ControlConfig,
-    running: Arc<AtomicBool>,
-) -> Result<(), String> {
-    let listener = TcpListener::bind(&config.control_bind)
-        .map_err(|err| format!("Failed to bind control listener {}: {err}", config.control_bind))?;
+pub fn run_with_shutdown(config: ControlConfig, running: Arc<AtomicBool>) -> Result<(), String> {
+    let listener = TcpListener::bind(&config.control_bind).map_err(|err| {
+        format!(
+            "Failed to bind control listener {}: {err}",
+            config.control_bind
+        )
+    })?;
     listener
         .set_nonblocking(true)
         .map_err(|err| format!("Failed to set non-blocking mode: {err}"))?;
@@ -173,6 +179,7 @@ pub fn run_with_shutdown(
 
     let stream_controller = Arc::new(StreamController::new(config.stream.clone()));
     let pairing_token = resolve_pairing_token(&config.pairing_token);
+
     let daemon_status = Arc::new(Mutex::new(DaemonStatus {
         state: DaemonState::Waiting,
         pin: Some(pairing_token.clone()),
@@ -183,10 +190,14 @@ pub fn run_with_shutdown(
         )),
     }));
 
+    // ✅ IMPORTANT: print the resolved socket path so you can verify it matches the UI.
     let socket_path = resolve_socket_path();
+    println!("Status socket path resolved to {:?}", socket_path);
+
     let status_stream_controller = Arc::clone(&stream_controller);
     let status_state = Arc::clone(&daemon_status);
     let status_running = Arc::clone(&running);
+
     thread::spawn(move || {
         if let Err(err) = run_status_socket(
             socket_path,
@@ -299,12 +310,10 @@ fn run_streaming(config: StreamConfig, stop: Arc<AtomicBool>) -> Result<(), Stri
                 continue;
             }
         };
-        let raw_frame = encode::h264::RawFrame::new(
-            pixels,
-            width,
-            height,
-            encode::h264::RawPixelFormat::Bgra,
-        );
+
+        let raw_frame =
+            encode::h264::RawFrame::new(pixels, width, height, encode::h264::RawPixelFormat::Bgra);
+
         let encoded_frame = match encoder.encode_frame(&raw_frame) {
             Ok(frame) => frame,
             Err(error) => {
@@ -312,6 +321,7 @@ fn run_streaming(config: StreamConfig, stop: Arc<AtomicBool>) -> Result<(), Stri
                 continue;
             }
         };
+
         let packets = net::packetize_frame(&encoded_frame);
         for packet in &packets {
             if stop.load(Ordering::Relaxed) {
@@ -345,17 +355,22 @@ fn run_status_socket(
 ) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
-            .map_err(|err| format!("Failed to create socket directory: {err}"))?;
+            .map_err(|err| format!("Failed to create socket directory {parent:?}: {err}"))?;
     }
+
+    // remove stale socket
     if path.exists() {
         let _ = std::fs::remove_file(&path);
     }
 
-    let listener =
-        UnixListener::bind(&path).map_err(|err| format!("Failed to bind socket: {err}"))?;
+    let listener = UnixListener::bind(&path)
+        .map_err(|err| format!("Failed to bind socket {path:?}: {err}"))?;
     listener
         .set_nonblocking(true)
         .map_err(|err| format!("Failed to set socket non-blocking: {err}"))?;
+
+    // ✅ This print is what you were missing.
+    println!("Status socket bound on {:?}", path);
 
     while running.load(Ordering::Relaxed) {
         match listener.accept() {
@@ -384,11 +399,17 @@ fn handle_status_client(
 ) -> Result<(), String> {
     let mut buffer = String::new();
     let mut reader = std::io::BufReader::new(stream.try_clone().map_err(|err| err.to_string())?);
+
     loop {
         buffer.clear();
-        if reader.read_line(&mut buffer).map_err(|err| err.to_string())? == 0 {
+        if reader
+            .read_line(&mut buffer)
+            .map_err(|err| err.to_string())?
+            == 0
+        {
             return Ok(());
         }
+
         let line = buffer.trim();
         match line {
             "status" => {
@@ -438,6 +459,7 @@ fn write_status(stream: &mut UnixStream, status: &DaemonStatus) -> Result<(), St
         DaemonState::Connected => "connected",
         DaemonState::Streaming => "streaming",
     };
+
     let mut line = format!("state={state}");
     if let Some(pin) = &status.pin {
         line.push_str(&format!(" pin={pin}"));
@@ -446,6 +468,7 @@ fn write_status(stream: &mut UnixStream, status: &DaemonStatus) -> Result<(), St
         line.push_str(&format!(" qr={qr}"));
     }
     line.push('\n');
+
     stream
         .write_all(line.as_bytes())
         .map_err(|err| format!("Failed to write status: {err}"))?;
@@ -462,7 +485,8 @@ fn resolve_pairing_token(value: &str) -> String {
 }
 
 fn parse_port(addr: &str) -> Option<u16> {
-    addr.rsplit_once(':').and_then(|(_, port)| port.parse().ok())
+    addr.rsplit_once(':')
+        .and_then(|(_, port)| port.parse().ok())
 }
 
 fn resolve_local_ip() -> Option<String> {
@@ -471,16 +495,44 @@ fn resolve_local_ip() -> Option<String> {
     socket.local_addr().ok().map(|addr| addr.ip().to_string())
 }
 
+/// Robust home dir: uses HOME, else libc getpwuid fallback.
+/// This fixes cases where "~/" would otherwise NOT expand and you end up creating ./~/.local/...
+fn home_dir() -> Option<PathBuf> {
+    if let Some(home) = std::env::var_os("HOME") {
+        if !home.is_empty() {
+            return Some(PathBuf::from(home));
+        }
+    }
+
+    unsafe {
+        let uid = libc::getuid();
+        let pw = libc::getpwuid(uid);
+        if pw.is_null() {
+            return None;
+        }
+        let dir = (*pw).pw_dir;
+        if dir.is_null() {
+            return None;
+        }
+        let cstr = std::ffi::CStr::from_ptr(dir);
+        Some(PathBuf::from(cstr.to_string_lossy().to_string()))
+    }
+}
+
 fn expand_socket_path(path: &str) -> PathBuf {
     if let Some(rest) = path.strip_prefix("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return PathBuf::from(home).join(rest);
+        if let Some(home) = home_dir() {
+            return home.join(rest);
         }
+        // If HOME can't be resolved, do NOT leave "~" in the path silently.
+        // Fall back to /tmp to avoid "invisible" ./~ directory bugs.
+        return PathBuf::from("/tmp").join(rest);
     }
     PathBuf::from(path)
 }
 
 fn resolve_socket_path() -> PathBuf {
-    let candidate = std::env::var(SOCKET_ENV_VAR).unwrap_or_else(|_| DEFAULT_SOCKET_PATH.to_string());
+    let candidate =
+        std::env::var(SOCKET_ENV_VAR).unwrap_or_else(|_| DEFAULT_SOCKET_PATH.to_string());
     expand_socket_path(&candidate)
 }
