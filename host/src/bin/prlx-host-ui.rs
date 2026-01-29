@@ -237,6 +237,7 @@ impl eframe::App for HostUiApp {
                     )
                     .clicked()
                 {
+                    eprintln!("UI: Start clicked");
                     self.daemon.send(DaemonCommand::StartStream);
                 }
 
@@ -247,10 +248,12 @@ impl eframe::App for HostUiApp {
                     )
                     .clicked()
                 {
+                    eprintln!("UI: Stop clicked");
                     self.daemon.send(DaemonCommand::StopStream);
                 }
 
                 if ui.button("Refresh").clicked() {
+                    eprintln!("UI: Refresh clicked");
                     self.daemon.send(DaemonCommand::Refresh);
                 }
             });
@@ -292,8 +295,6 @@ struct DaemonClient {
     writer: Option<UnixStream>,
     reader: Option<BufReader<UnixStream>>,
     spawned_child: Option<Child>,
-    control_bind: String,
-    warning_sent: bool,
 }
 
 impl DaemonClient {
@@ -310,9 +311,6 @@ impl DaemonClient {
             writer: None,
             reader: None,
             spawned_child: None,
-            control_bind: std::env::var("PRLX_CONTROL_BIND")
-                .unwrap_or_else(|_| "0.0.0.0:0".to_string()),
-            warning_sent: false,
         }
     }
 
@@ -386,12 +384,6 @@ impl DaemonClient {
         if self.spawned_child.is_some() {
             return;
         }
-        if let Some(suppressed_until) = self.spawn_suppressed_until {
-            if suppressed_until > Instant::now() {
-                return;
-            }
-            self.spawn_suppressed_until = None;
-        }
         if self.last_spawn_attempt.elapsed() < SPAWN_INTERVAL {
             return;
         }
@@ -402,133 +394,22 @@ impl DaemonClient {
         }
         self.last_spawn_attempt = Instant::now();
 
-        if self.attach_existing_socket() {
-            self.spawn_suppressed_until = Some(Instant::now() + EXTERNAL_DAEMON_RETRY_DELAY);
+        if let Ok(child) = Command::new("prlx-hostd")
+            .env("PRLX_SOCKET_PATH", &self.socket_path)
+            .spawn()
+        {
+            self.last_spawn_success = Some(Instant::now());
+            self.spawned_child = Some(child);
             return;
-        }
-
-        if self.control_port_in_use() {
-            self.spawn_suppressed_until = Some(Instant::now() + EXTERNAL_DAEMON_RETRY_DELAY);
-            if !self.warning_sent {
-                let _ = self.event_tx.send(DaemonEvent::Warning(
-                    "Host daemon already running".to_string(),
-                ));
-                self.warning_sent = true;
-            }
-            return;
-        }
-
-        let mut spawn_errors = Vec::new();
-
-        match self.spawn_hostd("prlx-hostd") {
-            Ok(child) => {
-                self.last_spawn_success = Some(Instant::now());
-                self.spawned_child = Some(child);
-                self.warning_sent = false;
-                return;
-            }
-            Err(err) => {
-                spawn_errors.push(format!("prlx-hostd: {err}"));
-            }
         }
 
         if let Some(path) = discover_local_hostd() {
-            match self.spawn_hostd(path) {
-                Ok(child) => {
-                    self.last_spawn_success = Some(Instant::now());
-                    self.spawned_child = Some(child);
-                    self.warning_sent = false;
-                    return;
-                }
-                Err(err) => {
-                    spawn_errors.push(format!("local prlx-hostd: {err}"));
-                }
-            }
-        }
-
-        if !spawn_errors.is_empty() {
-            let _ = self.event_tx.send(DaemonEvent::Error(format!(
-                "Failed to start daemon: {}",
-                spawn_errors.join("; ")
-            )));
-        }
-    }
-
-    fn spawn_hostd<P: AsRef<std::ffi::OsStr>>(&self, path: P) -> std::io::Result<Child> {
-        Command::new(path)
-            .env("PRLX_SOCKET_PATH", &self.socket_path)
-            .arg("--control-bind")
-            .arg(&self.control_bind)
-            .spawn()
-    }
-
-    fn attach_existing_socket(&mut self) -> bool {
-        if !self.socket_path.exists() {
-            return false;
-        }
-
-        let stream = match UnixStream::connect(&self.socket_path) {
-            Ok(stream) => stream,
-            Err(_) => return false,
-        };
-
-        let _ = stream.set_read_timeout(Some(Duration::from_millis(200)));
-        let _ = stream.set_write_timeout(Some(Duration::from_millis(200)));
-        let reader_stream = match stream.try_clone() {
-            Ok(reader_stream) => reader_stream,
-            Err(err) => {
-                let _ = self
-                    .event_tx
-                    .send(DaemonEvent::Error(format!("Failed to clone socket: {err}")));
-                return false;
-            }
-        };
-
-        let mut reader = BufReader::new(reader_stream);
-        if stream.try_clone().unwrap().write_all(b"status\n").is_err() {
-            return false;
-        }
-
-        let mut buffer = String::new();
-        match reader.read_line(&mut buffer) {
-            Ok(0) => return false,
-            Ok(_) => {
-                let Some(status) = parse_status(&buffer) else {
-                    return false;
-                };
-                self.status = status.clone();
-                self.writer = Some(stream);
-                self.reader = Some(reader);
-                self.warning_sent = false;
-                let _ = self.event_tx.send(DaemonEvent::Status(status));
-                true
-            }
-            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => false,
-            Err(err) if err.kind() == std::io::ErrorKind::TimedOut => false,
-            Err(_) => false,
-        }
-    }
-
-    fn control_port_in_use(&mut self) -> bool {
-        let Some((_, port)) = self.control_bind.rsplit_once(':') else {
-            return false;
-        };
-        if port == "0" {
-            return false;
-        }
-
-        match TcpListener::bind(&self.control_bind) {
-            Ok(listener) => {
-                drop(listener);
-                false
-            }
-            Err(err) if err.kind() == std::io::ErrorKind::AddrInUse => true,
-            Err(err) => {
-                let _ = self.event_tx.send(DaemonEvent::Error(format!(
-                    "Failed to check control port {}: {err}",
-                    self.control_bind
-                )));
-                false
+            if let Ok(child) = Command::new(path)
+                .env("PRLX_SOCKET_PATH", &self.socket_path)
+                .spawn()
+            {
+                self.last_spawn_success = Some(Instant::now());
+                self.spawned_child = Some(child);
             }
         }
     }
@@ -541,7 +422,7 @@ impl DaemonClient {
             return;
         }
         self.last_status_poll = Instant::now();
-        self.send_line("status");
+        self.send_line("status", "poll status");
     }
 
     fn read_responses(&mut self) {
@@ -575,29 +456,49 @@ impl DaemonClient {
 
     fn handle_command(&mut self, command: DaemonCommand) {
         match command {
-            DaemonCommand::Refresh => self.send_line("status"),
-            DaemonCommand::StartStream => self.send_line("start"),
+            DaemonCommand::Refresh => {
+                eprintln!("DaemonClient: Refresh command");
+                self.ensure_connected();
+                self.send_line("status", "refresh");
+            }
+            DaemonCommand::StartStream => {
+                eprintln!("DaemonClient: StartStream command");
+                self.ensure_connected();
+                self.send_line("start", "start");
+            }
             DaemonCommand::StopStream => {
-                self.send_line("stop");
+                eprintln!("DaemonClient: StopStream command");
+                self.ensure_connected();
+                self.send_line("stop", "stop");
                 self.shutdown_child();
             }
             DaemonCommand::Shutdown => {
-                self.send_line("stop");
+                eprintln!("DaemonClient: Shutdown command");
+                self.ensure_connected();
+                self.send_line("stop", "shutdown");
                 self.shutdown_child();
             }
         }
     }
 
-    fn send_line(&mut self, line: &str) {
+    fn send_line(&mut self, line: &str, action: &str) -> bool {
         let Some(writer) = self.writer.as_mut() else {
-            return;
+            let _ = self.event_tx.send(DaemonEvent::Error(format!(
+                "Daemon not connected; cannot {action}"
+            )));
+            return false;
         };
 
         let payload = format!("{line}\n");
         if writer.write_all(payload.as_bytes()).is_err() {
             self.writer = None;
             self.reader = None;
+            let _ = self
+                .event_tx
+                .send(DaemonEvent::Error(format!("Failed to send {action} command")));
+            return false;
         }
+        true
     }
 
     fn refresh_child_status(&mut self) {
