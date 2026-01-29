@@ -163,7 +163,8 @@ struct HostUiApp {
     qr_payload: Option<String>,
     shutdown_rx: Receiver<()>,
     shutdown_initiated: bool,
-    visuals_applied: bool,
+    dark_mode: bool,
+    visuals_mode: Option<bool>,
 }
 
 impl HostUiApp {
@@ -185,26 +186,27 @@ impl HostUiApp {
             qr_payload: None,
             shutdown_rx,
             shutdown_initiated: false,
-            visuals_applied: false,
+            dark_mode: false,
+            visuals_mode: None,
         };
 
-        app.apply_visuals_once(&cc.egui_ctx);
         app.refresh_qr_texture(&cc.egui_ctx);
         app.daemon.send(DaemonCommand::Refresh);
         app
     }
 
-    fn apply_visuals_once(&mut self, ctx: &egui::Context) {
-        if self.visuals_applied {
+    fn apply_visuals_if_needed(&mut self, ctx: &egui::Context, palette: &UiPalette) {
+        if self.visuals_mode == Some(self.dark_mode) {
             return;
         }
-        self.visuals_applied = true;
+        self.visuals_mode = Some(self.dark_mode);
 
-        let palette = UiPalette::new();
-
+        let mut visuals = if self.dark_mode {
+            egui::Visuals::dark()
+        } else {
+            egui::Visuals::light()
+        };
         // Older-egui safe visuals (no Shadow types).
-        let mut visuals = egui::Visuals::light();
-
         // Window/panel fill prevents the “black corners” look when using rounding.
         // If your egui version doesn't have these fields, comment them out.
         visuals.window_fill = palette.background;
@@ -222,7 +224,7 @@ impl HostUiApp {
 
         // Strokes
         visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, palette.card_border);
-        visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, Color32::from_rgb(195, 202, 214));
+        visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, palette.card_border);
         visuals.widgets.active.bg_stroke = Stroke::new(1.0, palette.accent);
 
         ctx.set_visuals(visuals);
@@ -296,7 +298,12 @@ impl eframe::App for HostUiApp {
 
         self.refresh_qr_texture(ctx);
 
-        let palette = UiPalette::new();
+        let palette = if self.dark_mode {
+            UiPalette::dark()
+        } else {
+            UiPalette::light()
+        };
+        self.apply_visuals_if_needed(ctx, &palette);
         let time = ctx.input(|i| i.time) as f32;
         let pulse = (time * 1.0).sin() * 0.5 + 0.5;
         let accent = lerp_color(palette.accent, palette.accent_glow, pulse);
@@ -327,6 +334,14 @@ impl eframe::App for HostUiApp {
                     // Right badges (force horizontal, prevent wrap weirdness)
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.spacing_mut().item_spacing.x = 10.0;
+
+                        ui.add(
+                            egui::Checkbox::new(
+                                &mut self.dark_mode,
+                                RichText::new("Dark").size(12.0).color(palette.subtle_text),
+                            )
+                            .wrap(false),
+                        );
 
                         header_pill(
                             ui,
@@ -921,8 +936,7 @@ struct UiPalette {
 }
 
 impl UiPalette {
-    fn new() -> Self {
-        // Purple theme
+    fn light() -> Self {
         Self {
             background: Color32::from_rgb(245, 246, 250),
             header: Color32::from_rgb(252, 252, 254),
@@ -941,6 +955,25 @@ impl UiPalette {
             error_bg: Color32::from_rgb(255, 238, 240),
             warning: Color32::from_rgb(214, 131, 0),
             warning_bg: Color32::from_rgb(255, 246, 230),
+        }
+    }
+
+    fn dark() -> Self {
+        Self {
+            background: Color32::from_rgb(14, 16, 21),
+            header: Color32::from_rgb(18, 20, 26),
+            card: Color32::from_rgb(24, 27, 34),
+            card_border: Color32::from_rgb(46, 50, 60),
+            qr_bg: Color32::from_rgb(22, 24, 30),
+            text: Color32::from_rgb(236, 239, 244),
+            subtle_text: Color32::from_rgb(156, 164, 178),
+            accent: Color32::from_rgb(124, 77, 255),
+            accent_glow: Color32::from_rgb(176, 145, 255),
+            muted: Color32::from_rgb(70, 75, 88),
+            error: Color32::from_rgb(255, 104, 112),
+            error_bg: Color32::from_rgb(54, 24, 28),
+            warning: Color32::from_rgb(255, 184, 92),
+            warning_bg: Color32::from_rgb(54, 40, 18),
         }
     }
 }
@@ -978,7 +1011,7 @@ fn info_row(ui: &mut egui::Ui, label: &str, value: &str, palette: &UiPalette) {
 }
 
 fn header_pill(ui: &mut egui::Ui, label: &str, value: &str, color: Color32, palette: &UiPalette) {
-    ui.horizontal(|ui| {
+    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
         ui.add(
             egui::Label::new(RichText::new(label).size(12.0).color(palette.subtle_text))
                 .wrap(false),
