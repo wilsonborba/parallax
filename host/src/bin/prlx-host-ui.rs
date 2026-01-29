@@ -17,10 +17,17 @@ const SPAWN_RETRY_DELAY: Duration = Duration::from_secs(10);
 fn main() -> eframe::Result<()> {
     let socket_path = expand_path(DEFAULT_SOCKET_PATH);
     let native_options = eframe::NativeOptions::default();
+    let (shutdown_tx, shutdown_rx) = mpsc::channel();
+    let handler_tx = shutdown_tx.clone();
+    if let Err(err) = ctrlc::set_handler(move || {
+        let _ = handler_tx.send(());
+    }) {
+        eprintln!("Failed to install signal handler: {err}");
+    }
     eframe::run_native(
         "Parallax Host UI",
         native_options,
-        Box::new(|cc| Box::new(HostUiApp::new(cc, socket_path))),
+        Box::new(move |cc| Box::new(HostUiApp::new(cc, socket_path, shutdown_rx))),
     )
 }
 
@@ -116,10 +123,16 @@ struct HostUiApp {
     last_error: Option<String>,
     qr_texture: Option<TextureHandle>,
     qr_payload: Option<String>,
+    shutdown_rx: Receiver<()>,
+    shutdown_initiated: bool,
 }
 
 impl HostUiApp {
-    fn new(cc: &eframe::CreationContext<'_>, socket_path: PathBuf) -> Self {
+    fn new(
+        cc: &eframe::CreationContext<'_>,
+        socket_path: PathBuf,
+        shutdown_rx: Receiver<()>,
+    ) -> Self {
         let daemon = DaemonHandle::new(socket_path);
         let mut app = Self {
             daemon,
@@ -127,6 +140,8 @@ impl HostUiApp {
             last_error: None,
             qr_texture: None,
             qr_payload: None,
+            shutdown_rx,
+            shutdown_initiated: false,
         };
         app.refresh_qr_texture(&cc.egui_ctx);
         app.daemon.send(DaemonCommand::Refresh);
@@ -160,6 +175,20 @@ impl HostUiApp {
 
 impl eframe::App for HostUiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if !self.shutdown_initiated {
+            match self.shutdown_rx.try_recv() {
+                Ok(()) => {
+                    self.shutdown_initiated = true;
+                    self.daemon.send(DaemonCommand::Shutdown);
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+                Err(TryRecvError::Empty) => {}
+                Err(TryRecvError::Disconnected) => {
+                    self.shutdown_initiated = true;
+                }
+            }
+        }
+
         while let Some(event) = self.daemon.try_recv() {
             match event {
                 DaemonEvent::Status(status) => {
