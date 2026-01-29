@@ -1,8 +1,18 @@
 package com.parallax.receiver.presentation.ui
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -18,14 +28,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,9 +49,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.ContextCompat
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.common.InputImage
 import com.parallax.receiver.core.config.DEFAULT_REMOTE_HEIGHT
 import com.parallax.receiver.core.config.DEFAULT_REMOTE_WIDTH
 import com.parallax.receiver.core.config.SCALE_MAX
@@ -44,6 +65,9 @@ import com.parallax.receiver.core.config.SCALE_MIN
 import com.parallax.receiver.domain.model.StreamState
 import com.parallax.receiver.domain.model.UiState
 import com.parallax.receiver.presentation.theme.spacing
+import java.util.concurrent.Executors
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 
 @Composable
 fun StreamScreen(
@@ -56,6 +80,7 @@ fun StreamScreen(
     onControlPortChanged: (Int) -> Unit,
     onAccessPinChanged: (String) -> Unit,
     onPairingTokenChanged: (String) -> Unit,
+    onQrPayloadScanned: (String) -> Unit,
     onSurfaceAvailable: (Surface) -> Unit,
     onSurfaceDestroyed: () -> Unit,
     modifier: Modifier = Modifier,
@@ -115,6 +140,7 @@ fun StreamScreen(
                         onControlPortChanged = onControlPortChanged,
                         onAccessPinChanged = onAccessPinChanged,
                         onPairingTokenChanged = onPairingTokenChanged,
+                        onQrPayloadScanned = onQrPayloadScanned,
                         status = status,
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
@@ -139,10 +165,29 @@ private fun ControlsPanel(
     onControlPortChanged: (Int) -> Unit,
     onAccessPinChanged: (String) -> Unit,
     onPairingTokenChanged: (String) -> Unit,
+    onQrPayloadScanned: (String) -> Unit,
     status: StreamState.Status,
     modifier: Modifier = Modifier,
 ) {
     val spacing = MaterialTheme.spacing
+    val context = LocalContext.current
+    var showScanner by remember { mutableStateOf(false) }
+    val cameraPermissionGranted = remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.CAMERA,
+            ) == PackageManager.PERMISSION_GRANTED,
+        )
+    }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        cameraPermissionGranted.value = granted
+        if (granted) {
+            showScanner = true
+        }
+    }
     Surface(
         modifier = modifier,
         shape = MaterialTheme.shapes.large,
@@ -171,6 +216,13 @@ private fun ControlsPanel(
                 onControlPortChanged = onControlPortChanged,
                 onAccessPinChanged = onAccessPinChanged,
                 onPairingTokenChanged = onPairingTokenChanged,
+                onScanQrClicked = {
+                    if (cameraPermissionGranted.value) {
+                        showScanner = true
+                    } else {
+                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                    }
+                },
             )
             StreamActions(
                 status = status,
@@ -183,6 +235,12 @@ private fun ControlsPanel(
                 onScaleChanged = onScaleChanged,
             )
         }
+    }
+    if (showScanner) {
+        QrScannerSheet(
+            onDismiss = { showScanner = false },
+            onPayloadScanned = onQrPayloadScanned,
+        )
     }
 }
 
@@ -199,6 +257,7 @@ private fun ConnectionSettings(
     onControlPortChanged: (Int) -> Unit,
     onAccessPinChanged: (String) -> Unit,
     onPairingTokenChanged: (String) -> Unit,
+    onScanQrClicked: () -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
     var hostText by remember(host) { mutableStateOf(host) }
@@ -225,6 +284,17 @@ private fun ConnectionSettings(
             enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
         )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            OutlinedButton(
+                onClick = onScanQrClicked,
+                enabled = enabled,
+            ) {
+                Text("Scan QR")
+            }
+        }
         OutlinedTextField(
             value = streamPortText,
             onValueChange = { value ->
@@ -284,6 +354,115 @@ private fun ConnectionSettings(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun QrScannerSheet(
+    onDismiss: () -> Unit,
+    onPayloadScanned: (String) -> Unit,
+) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val scanner = remember { BarcodeScanning.getClient() }
+    val previewView = remember { PreviewView(context) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val executor = remember { Executors.newSingleThreadExecutor() }
+    val mainExecutor = remember { ContextCompat.getMainExecutor(context) }
+    var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+    var hasScanned by remember { mutableStateOf(false) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            cameraProvider?.unbindAll()
+            scanner.close()
+            executor.shutdown()
+        }
+    }
+
+    LaunchedEffect(previewView, lifecycleOwner) {
+        val provider = context.getCameraProvider()
+        cameraProvider = provider
+        val preview = Preview.Builder().build().also {
+            it.setSurfaceProvider(previewView.surfaceProvider)
+        }
+        val analysis = ImageAnalysis.Builder()
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .build()
+        analysis.setAnalyzer(executor) { imageProxy ->
+            if (hasScanned) {
+                imageProxy.close()
+                return@setAnalyzer
+            }
+            val mediaImage = imageProxy.image
+            if (mediaImage == null) {
+                imageProxy.close()
+                return@setAnalyzer
+            }
+            val inputImage =
+                InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+            scanner.process(inputImage)
+                .addOnSuccessListener(mainExecutor) { barcodes ->
+                    if (hasScanned) {
+                        return@addOnSuccessListener
+                    }
+                    val payload = barcodes.firstOrNull { !it.rawValue.isNullOrBlank() }?.rawValue
+                    if (payload != null) {
+                        hasScanned = true
+                        onPayloadScanned(payload)
+                        onDismiss()
+                    }
+                }
+                .addOnCompleteListener(mainExecutor) {
+                    imageProxy.close()
+                }
+        }
+        provider.unbindAll()
+        provider.bindToLifecycle(
+            lifecycleOwner,
+            CameraSelector.DEFAULT_BACK_CAMERA,
+            preview,
+            analysis,
+        )
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        windowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
+        dragHandle = null,
+        properties = DialogProperties(dismissOnClickOutside = true),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "Scan QR code",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = "Align the QR code within the frame to autofill the host and control port.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            AndroidView(
+                factory = { previewView },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(320.dp),
+            )
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Close")
+            }
         }
     }
 }
@@ -506,5 +685,15 @@ fun VideoArea(
                 modifier = Modifier.fillMaxSize(),
             )
         }
+    }
+}
+
+private suspend fun Context.getCameraProvider(): ProcessCameraProvider {
+    return suspendCoroutine { continuation ->
+        val future = ProcessCameraProvider.getInstance(this)
+        future.addListener(
+            { continuation.resume(future.get()) },
+            ContextCompat.getMainExecutor(this),
+        )
     }
 }
