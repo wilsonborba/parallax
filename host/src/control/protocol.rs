@@ -27,7 +27,7 @@ pub enum MessageType {
 impl TryFrom<u8> for MessageType {
     type Error = String;
 
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
+    fn try_from(value: u8) -> Result<Self, <Self as TryFrom<u8>>::Error> {
         match value {
             0x01 => Ok(Self::Hello),
             0x02 => Ok(Self::HelloAck),

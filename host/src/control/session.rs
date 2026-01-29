@@ -1,5 +1,6 @@
 use std::collections::HashSet;
-use std::sync::Arc;
+use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
 
 use crate::control::crypto;
 use crate::control::protocol::{Frame, MessageType};
@@ -15,12 +16,31 @@ pub enum HandshakeState {
 pub trait StreamCoordinator: Send + Sync {
     fn start_stream(&self) -> Result<(), String>;
     fn stop_stream(&self) -> Result<(), String>;
+    fn set_target(&self, target: String) -> Result<(), String>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DaemonState {
+    Idle,
+    Waiting,
+    Connected,
+    Streaming,
+}
+
+#[derive(Debug, Clone)]
+pub struct DaemonStatus {
+    pub state: DaemonState,
+    pub pin: Option<String>,
+    pub qr_uri: Option<String>,
 }
 
 pub struct Session {
     state: HandshakeState,
     pairing_token: String,
     stream: Arc<dyn StreamCoordinator>,
+    daemon_status: Arc<Mutex<DaemonStatus>>,
+    client_addr: SocketAddr,
+    default_target_port: Option<u16>,
     pending_nonce: Option<[u8; crypto::NONCE_LEN]>,
     used_nonces: HashSet<[u8; crypto::NONCE_LEN]>,
     master_key: Vec<u8>,
@@ -28,12 +48,21 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn new(pairing_token: String, stream: Arc<dyn StreamCoordinator>) -> Self {
+    pub fn new(
+        pairing_token: String,
+        stream: Arc<dyn StreamCoordinator>,
+        daemon_status: Arc<Mutex<DaemonStatus>>,
+        client_addr: SocketAddr,
+        default_target_port: Option<u16>,
+    ) -> Self {
         Self {
             state: HandshakeState::AwaitHello,
             master_key: crypto::derive_master_key(&pairing_token),
             pairing_token,
             stream,
+            daemon_status,
+            client_addr,
+            default_target_port,
             pending_nonce: None,
             used_nonces: HashSet::new(),
             session_key: None,
@@ -58,6 +87,7 @@ impl Session {
     fn handle_hello(&mut self) -> Vec<Frame> {
         if self.state == HandshakeState::AwaitHello {
             self.state = HandshakeState::AwaitPairing;
+            self.update_daemon_state(DaemonState::Waiting);
         }
 
         vec![Frame::new(
@@ -74,7 +104,7 @@ impl Session {
             )];
         }
 
-        let token = match String::from_utf8(payload) {
+        let (token, target_port) = match parse_pair_request(payload) {
             Ok(token) => token,
             Err(_) => {
                 return vec![Frame::new(
@@ -90,6 +120,12 @@ impl Session {
                     MessageType::Error,
                     b"auth in progress".to_vec(),
                 )];
+            }
+            if let Some(target_port) = target_port.or(self.default_target_port) {
+                let target = format!("{}:{}", self.client_addr.ip(), target_port);
+                if let Err(err) = self.stream.set_target(target) {
+                    return vec![Frame::new(MessageType::Error, err.into_bytes())];
+                }
             }
             let nonce = self.next_nonce();
             self.pending_nonce = Some(nonce);
@@ -146,6 +182,7 @@ impl Session {
         self.used_nonces.insert(nonce);
         self.session_key = Some(session_key);
         self.state = HandshakeState::Paired;
+        self.update_daemon_state(DaemonState::Connected);
         vec![Frame::new(MessageType::PairAccept, Vec::new())]
     }
 
@@ -158,7 +195,10 @@ impl Session {
         }
 
         match self.stream.start_stream() {
-            Ok(()) => vec![Frame::new(MessageType::StreamStarted, Vec::new())],
+            Ok(()) => {
+                self.update_daemon_state(DaemonState::Streaming);
+                vec![Frame::new(MessageType::StreamStarted, Vec::new())]
+            }
             Err(err) => vec![Frame::new(MessageType::Error, err.into_bytes())],
         }
     }
@@ -172,7 +212,10 @@ impl Session {
         }
 
         match self.stream.stop_stream() {
-            Ok(()) => vec![Frame::new(MessageType::StreamStopped, Vec::new())],
+            Ok(()) => {
+                self.update_daemon_state(DaemonState::Connected);
+                vec![Frame::new(MessageType::StreamStopped, Vec::new())]
+            }
             Err(err) => vec![Frame::new(MessageType::Error, err.into_bytes())],
         }
     }
@@ -185,4 +228,19 @@ impl Session {
             }
         }
     }
+
+    fn update_daemon_state(&self, state: DaemonState) {
+        if let Ok(mut status) = self.daemon_status.lock() {
+            status.state = state;
+        }
+    }
+}
+
+fn parse_pair_request(payload: Vec<u8>) -> Result<(String, Option<u16>), ()> {
+    let token = String::from_utf8(payload).map_err(|_| ())?;
+    if let Some((token, port)) = token.split_once('|') {
+        let port = port.parse::<u16>().map_err(|_| ())?;
+        return Ok((token.to_string(), Some(port)));
+    }
+    Ok((token, None))
 }
