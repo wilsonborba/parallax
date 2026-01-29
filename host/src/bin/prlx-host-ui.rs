@@ -370,24 +370,46 @@ impl DaemonClient {
         }
         self.last_spawn_attempt = Instant::now();
 
-        if let Ok(child) = Command::new("prlx-hostd")
-            .env("PRLX_SOCKET_PATH", &self.socket_path)
-            .spawn()
-        {
-            self.last_spawn_success = Some(Instant::now());
-            self.spawned_child = Some(child);
-            return;
+        let mut spawn_errors = Vec::new();
+
+        match self.spawn_hostd("prlx-hostd") {
+            Ok(child) => {
+                self.last_spawn_success = Some(Instant::now());
+                self.spawned_child = Some(child);
+                return;
+            }
+            Err(err) => {
+                spawn_errors.push(format!("prlx-hostd: {err}"));
+            }
         }
 
         if let Some(path) = discover_local_hostd() {
-            if let Ok(child) = Command::new(path)
-                .env("PRLX_SOCKET_PATH", &self.socket_path)
-                .spawn()
-            {
-                self.last_spawn_success = Some(Instant::now());
-                self.spawned_child = Some(child);
+            match self.spawn_hostd(path) {
+                Ok(child) => {
+                    self.last_spawn_success = Some(Instant::now());
+                    self.spawned_child = Some(child);
+                    return;
+                }
+                Err(err) => {
+                    spawn_errors.push(format!("local prlx-hostd: {err}"));
+                }
             }
         }
+
+        if !spawn_errors.is_empty() {
+            let _ = self.event_tx.send(DaemonEvent::Error(format!(
+                "Failed to start daemon: {}",
+                spawn_errors.join("; ")
+            )));
+        }
+    }
+
+    fn spawn_hostd<P: AsRef<std::ffi::OsStr>>(&self, path: P) -> std::io::Result<Child> {
+        Command::new(path)
+            .env("PRLX_SOCKET_PATH", &self.socket_path)
+            .arg("--control-bind")
+            .arg("0.0.0.0:0")
+            .spawn()
     }
 
     fn poll_status(&mut self) {
