@@ -78,8 +78,8 @@ class ControlClient(
             when (pairingResponse.messageType) {
                 MessageType.AuthChallenge -> {
                     val nonce = pairingResponse.payload
-                    val sessionKey = deriveSessionKey(pairingToken, nonce)
-                    val hmac = hmacSha256(sessionKey, nonce)
+                    val sessionKey = ControlClient.deriveSessionKey(pairingToken, nonce)
+                    val hmac = ControlClient.hmacSha256(sessionKey, nonce)
                     writeFrame(MessageType.AuthResponse, hmac)
                     val authResponse = readFrame()
                     when (authResponse.messageType) {
@@ -134,6 +134,28 @@ class ControlClient(
         private const val KEY_LEN_BYTES = 32
         private const val HKDF_INFO = "parallax-control-auth"
         private val PBKDF2_SALT = "parallax-control".toByteArray()
+        private fun deriveSessionKey(pairingToken: String, nonce: ByteArray): ByteArray {
+            val masterKey = pbkdf2Sha256(pairingToken.toCharArray(), PBKDF2_SALT, PBKDF2_ITERATIONS, KEY_LEN_BYTES)
+            return hkdfSha256(masterKey, nonce, HKDF_INFO.toByteArray(), KEY_LEN_BYTES)
+        }
+
+        private fun pbkdf2Sha256(password: CharArray, salt: ByteArray, iterations: Int, keyLenBytes: Int): ByteArray {
+            val spec = PBEKeySpec(password, salt, iterations, keyLenBytes * 8)
+            val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+            return factory.generateSecret(spec).encoded
+        }
+
+        private fun hkdfSha256(ikm: ByteArray, salt: ByteArray, info: ByteArray, keyLenBytes: Int): ByteArray {
+            val prk = hmacSha256(salt, ikm)
+            val okm = hmacSha256(prk, info + 0x01.toByte())
+            return okm.copyOfRange(0, keyLenBytes)
+        }
+
+        private fun hmacSha256(key: ByteArray, data: ByteArray): ByteArray {
+            val mac = Mac.getInstance("HmacSHA256")
+            mac.init(SecretKeySpec(key, "HmacSHA256"))
+            return mac.doFinal(data)
+        }
     }
 
     private data class Frame(
@@ -165,40 +187,17 @@ class ControlClient(
             }
         }
     }
+}
 
-    private fun deriveSessionKey(pairingToken: String, nonce: ByteArray): ByteArray {
-        val masterKey = pbkdf2Sha256(pairingToken.toCharArray(), PBKDF2_SALT, PBKDF2_ITERATIONS, KEY_LEN_BYTES)
-        return hkdfSha256(masterKey, nonce, HKDF_INFO.toByteArray(), KEY_LEN_BYTES)
-    }
-
-    private fun pbkdf2Sha256(password: CharArray, salt: ByteArray, iterations: Int, keyLenBytes: Int): ByteArray {
-        val spec = PBEKeySpec(password, salt, iterations, keyLenBytes * 8)
-        val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
-        return factory.generateSecret(spec).encoded
-    }
-
-    private fun hkdfSha256(ikm: ByteArray, salt: ByteArray, info: ByteArray, keyLenBytes: Int): ByteArray {
-        val prk = hmacSha256(salt, ikm)
-        val okm = hmacSha256(prk, info + 0x01.toByte())
-        return okm.copyOfRange(0, keyLenBytes)
-    }
-
-    private fun hmacSha256(key: ByteArray, data: ByteArray): ByteArray {
-        val mac = Mac.getInstance("HmacSHA256")
-        mac.init(SecretKeySpec(key, "HmacSHA256"))
-        return mac.doFinal(data)
-    }
-
-    private fun InputStream.readExact(length: Int): ByteArray {
-        val buffer = ByteArray(length)
-        var offset = 0
-        while (offset < length) {
-            val read = read(buffer, offset, length - offset)
-            if (read == -1) {
-                throw EOFException("Unexpected end of stream")
-            }
-            offset += read
+private fun InputStream.readExact(length: Int): ByteArray {
+    val buffer = ByteArray(length)
+    var offset = 0
+    while (offset < length) {
+        val read = read(buffer, offset, length - offset)
+        if (read == -1) {
+            throw EOFException("Unexpected end of stream")
         }
-        return buffer
+        offset += read
     }
+    return buffer
 }
