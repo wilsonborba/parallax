@@ -53,6 +53,7 @@ fun StreamScreen(
     onScaleChanged: (Float) -> Unit,
     onHostChanged: (String) -> Unit,
     onPortChanged: (Int) -> Unit,
+    onAccessPinChanged: (String) -> Unit,
     onSurfaceAvailable: (Surface) -> Unit,
     onSurfaceDestroyed: () -> Unit,
     modifier: Modifier = Modifier,
@@ -109,6 +110,7 @@ fun StreamScreen(
                         onScaleChanged = onScaleChanged,
                         onHostChanged = onHostChanged,
                         onPortChanged = onPortChanged,
+                        onAccessPinChanged = onAccessPinChanged,
                         status = status,
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
@@ -130,6 +132,7 @@ private fun ControlsPanel(
     onScaleChanged: (Float) -> Unit,
     onHostChanged: (String) -> Unit,
     onPortChanged: (Int) -> Unit,
+    onAccessPinChanged: (String) -> Unit,
     status: StreamState.Status,
     modifier: Modifier = Modifier,
 ) {
@@ -153,9 +156,11 @@ private fun ControlsPanel(
             ConnectionSettings(
                 host = uiState.config.host,
                 port = uiState.config.port,
+                accessPin = uiState.config.accessPin,
                 enabled = status == StreamState.Status.Idle || status == StreamState.Status.Error,
                 onHostChanged = onHostChanged,
                 onPortChanged = onPortChanged,
+                onAccessPinChanged = onAccessPinChanged,
             )
             StreamActions(
                 status = status,
@@ -175,13 +180,16 @@ private fun ControlsPanel(
 private fun ConnectionSettings(
     host: String,
     port: Int,
+    accessPin: String,
     enabled: Boolean,
     onHostChanged: (String) -> Unit,
     onPortChanged: (Int) -> Unit,
+    onAccessPinChanged: (String) -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
     var hostText by remember(host) { mutableStateOf(host) }
     var portText by remember(port) { mutableStateOf(port.toString()) }
+    var accessPinText by remember(accessPin) { mutableStateOf(accessPin) }
     val portValue = portText.toIntOrNull()
     Column(verticalArrangement = Arrangement.spacedBy(spacing.small)) {
         Text(
@@ -210,6 +218,17 @@ private fun ConnectionSettings(
             singleLine = true,
             enabled = enabled,
             isError = portValue == null,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = accessPinText,
+            onValueChange = { value ->
+                accessPinText = value
+                onAccessPinChanged(value)
+            },
+            label = { Text("Access PIN") },
+            singleLine = true,
+            enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
         )
         if (portValue == null) {

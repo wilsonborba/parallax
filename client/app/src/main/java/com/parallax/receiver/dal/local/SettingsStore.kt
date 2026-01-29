@@ -9,6 +9,8 @@ interface SettingsStore {
     fun setHost(host: String)
     fun getPort(): Int
     fun setPort(port: Int)
+    fun getAccessPin(): String
+    fun setAccessPin(accessPin: String)
 }
 
 class SharedPreferencesSettingsStore(
@@ -44,12 +46,24 @@ class SharedPreferencesSettingsStore(
             .apply()
     }
 
+    override fun getAccessPin(): String {
+        return sharedPreferences.getString(KEY_ACCESS_PIN, DEFAULT_ACCESS_PIN) ?: DEFAULT_ACCESS_PIN
+    }
+
+    override fun setAccessPin(accessPin: String) {
+        sharedPreferences.edit()
+            .putString(KEY_ACCESS_PIN, accessPin)
+            .apply()
+    }
+
     private companion object {
         private const val KEY_SCALE = "settings.scale"
         private const val DEFAULT_SCALE = 1.0f
         private const val KEY_HOST = "settings.host"
         private const val KEY_PORT = "settings.port"
+        private const val KEY_ACCESS_PIN = "settings.access_pin"
         private const val DEFAULT_HOST = "127.0.0.1"
         private const val DEFAULT_PORT = 5000
+        private const val DEFAULT_ACCESS_PIN = "parallax"
     }
 }
