@@ -169,7 +169,12 @@ class StreamSessionService(
             return true
         }
         return try {
-            val session = controlClient.openSession(config.host, config.controlPort, config.accessPin)
+            val session = controlClient.openSession(
+                config.host,
+                config.controlPort,
+                config.accessPin,
+                config.streamPort,
+            )
             session.startStream()
             controlSession = session
             true
