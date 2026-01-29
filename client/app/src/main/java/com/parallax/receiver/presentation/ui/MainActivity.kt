@@ -51,6 +51,7 @@ class MainActivity : ComponentActivity() {
                         onControlPortChanged = streamViewModel::onControlPortChanged,
                         onAccessPinChanged = streamViewModel::onAccessPinChanged,
                         onPairingTokenChanged = streamViewModel::onPairingTokenChanged,
+                        onQrPayloadScanned = streamViewModel::onQrPayloadScanned,
                         onSurfaceAvailable = streamViewModel::onSurfaceAvailable,
                         onSurfaceDestroyed = streamViewModel::onSurfaceDestroyed,
                     )
