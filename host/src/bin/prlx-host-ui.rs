@@ -355,6 +355,13 @@ impl DaemonClient {
             if self.writer.is_none() {
                 self.ensure_connected();
             }
+            if self.writer.is_some() && !self.status.connected {
+                self.status.connected = true;
+                let _ = self.event_tx.send(DaemonEvent::Status(self.status.clone()));
+            } else if self.writer.is_none() && self.status.connected {
+                self.status.connected = false;
+                let _ = self.event_tx.send(DaemonEvent::Status(self.status.clone()));
+            }
 
             self.flush_pending_command();
             self.refresh_child_status();
