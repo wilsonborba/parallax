@@ -302,10 +302,6 @@ impl eframe::App for HostUiApp {
             UiPalette::light()
         };
         self.apply_visuals_if_needed(ctx, &palette);
-        let time = ctx.input(|i| i.time) as f32;
-        let pulse = (time * 1.0).sin() * 0.5 + 0.5;
-        let accent = lerp_color(palette.accent, palette.accent_glow, pulse);
-
         // ---------- HEADER ----------
         egui::TopBottomPanel::top("header")
             .frame(header_frame(&palette))
@@ -329,7 +325,7 @@ impl eframe::App for HostUiApp {
                         );
                     });
 
-                    // Right badges (force horizontal, prevent wrap weirdness)
+                    // Right controls
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.spacing_mut().item_spacing.x = 10.0;
 
@@ -337,16 +333,6 @@ impl eframe::App for HostUiApp {
                             &mut self.dark_mode,
                             RichText::new("Dark").size(12.0).color(palette.subtle_text),
                         ));
-
-                        header_pill(
-                            ui,
-                            "Daemon",
-                            daemon_label(self.status.connected),
-                            state_color(self.status.connected, &palette),
-                            &palette,
-                        );
-
-                        header_pill(ui, "State", self.status.state.label(), accent, &palette);
                     });
                 });
 
@@ -1005,27 +991,6 @@ fn info_row(ui: &mut egui::Ui, label: &str, value: &str, palette: &UiPalette) {
     });
 }
 
-fn header_pill(ui: &mut egui::Ui, label: &str, value: &str, color: Color32, palette: &UiPalette) {
-    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-        ui.add(
-            egui::Label::new(RichText::new(label).size(12.0).color(palette.subtle_text))
-                .wrap(false),
-        );
-
-        let pill = egui::Frame::none()
-            .fill(color)
-            .rounding(egui::Rounding::same(999.0))
-            .inner_margin(egui::Margin::symmetric(12.0, 6.0));
-
-        pill.show(ui, |ui| {
-            ui.add(
-                egui::Label::new(RichText::new(value).size(13.0).color(Color32::WHITE))
-                    .wrap(false),
-            );
-        });
-    });
-}
-
 fn status_chip(ui: &mut egui::Ui, text: &str, fill: Color32) {
     let frame = egui::Frame::none()
         .fill(fill)
@@ -1037,14 +1002,6 @@ fn status_chip(ui: &mut egui::Ui, text: &str, fill: Color32) {
     });
 
     ui.add_space(4.0);
-}
-
-fn state_color(connected: bool, palette: &UiPalette) -> Color32 {
-    if connected {
-        palette.accent
-    } else {
-        Color32::from_rgb(140, 146, 156)
-    }
 }
 
 fn daemon_label(connected: bool) -> &'static str {
