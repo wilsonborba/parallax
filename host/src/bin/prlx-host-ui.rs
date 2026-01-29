@@ -900,6 +900,7 @@ fn qr_to_image(payload: &str, scale: usize) -> Option<ColorImage> {
 // --------------------------
 
 struct UiPalette {
+    is_dark: bool,
     background: Color32,
     header: Color32,
     card: Color32,
@@ -919,6 +920,7 @@ struct UiPalette {
 impl UiPalette {
     fn light() -> Self {
         Self {
+            is_dark: false,
             background: Color32::from_rgb(245, 246, 250),
             header: Color32::from_rgb(252, 252, 254),
             card: Color32::from_rgb(255, 255, 255),
@@ -941,6 +943,7 @@ impl UiPalette {
 
     fn dark() -> Self {
         Self {
+            is_dark: true,
             background: Color32::from_rgb(14, 16, 21),
             header: Color32::from_rgb(18, 20, 26),
             card: Color32::from_rgb(24, 27, 34),
@@ -1019,8 +1022,13 @@ fn primary_button<'a>(label: &'a str, palette: &'a UiPalette) -> egui::Button<'a
 }
 
 fn secondary_button<'a>(label: &'a str, palette: &'a UiPalette) -> egui::Button<'a> {
-    egui::Button::new(RichText::new(label).size(14.0).color(palette.text))
-        .fill(Color32::from_rgb(233, 236, 244))
+    let (fill, text_color) = if palette.is_dark {
+        (Color32::from_rgb(50, 54, 64), Color32::WHITE)
+    } else {
+        (Color32::from_rgb(233, 236, 244), palette.text)
+    };
+
+    egui::Button::new(RichText::new(label).size(14.0).color(text_color)).fill(fill)
         .min_size(egui::vec2(110.0, 38.0))
 }
 
