@@ -1,8 +1,18 @@
+// src/bin/prlx-host-ui.rs
+//
+// Full adjusted version:
+// - ALL UI text in English
+// - Removes egui::Shadow + Frame::shadow() (compatible with older egui)
+// - Fixes mutable borrow of columns with split_at_mut()
+// - Avoids double Ctrl-C handler registration (ONLY uses the shutdown channel handler in main())
+// - Keeps your daemon/socket debug logging and protocol
+//
+// NOTE: This file assumes you have: `use host::core::logging as loggins;`
+
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
-use std::sync::Once;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::time::{Duration, Instant};
@@ -21,7 +31,6 @@ const SPAWN_INTERVAL: Duration = Duration::from_secs(5);
 const SPAWN_RETRY_DELAY: Duration = Duration::from_secs(10);
 
 static CHILD_PID: AtomicI32 = AtomicI32::new(0);
-static CTRL_C_HANDLER: Once = Once::new();
 
 fn main() -> eframe::Result<()> {
     let socket_path = expand_path(DEFAULT_SOCKET_PATH);
@@ -34,8 +43,9 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default().with_inner_size([980.0, 720.0]),
         ..Default::default()
     };
-    let (shutdown_tx, shutdown_rx) = mpsc::channel();
 
+    // We keep ONLY this Ctrl-C handler (no second handler anywhere else).
+    let (shutdown_tx, shutdown_rx) = mpsc::channel();
     let handler_tx = shutdown_tx.clone();
     if let Err(err) = ctrlc::set_handler(move || {
         let _ = handler_tx.send(());
@@ -117,6 +127,7 @@ impl DaemonHandle {
             "daemon_handle",
             format!("Spawning daemon client thread; socket_path={socket_path:?}"),
         );
+
         std::thread::spawn(move || {
             let mut client = DaemonClient::new(socket_path, event_tx);
             client.run(command_rx);
@@ -152,6 +163,9 @@ struct HostUiApp {
     qr_payload: Option<String>,
     shutdown_rx: Receiver<()>,
     shutdown_initiated: bool,
+
+    // UI polish
+    visuals_applied: bool,
 }
 
 impl HostUiApp {
@@ -162,7 +176,6 @@ impl HostUiApp {
     ) -> Self {
         loggins::info("ui", "HostUiApp::new");
         let daemon = DaemonHandle::new(socket_path);
-        install_ctrlc_handler(daemon.command_sender());
 
         let mut app = Self {
             daemon,
@@ -173,12 +186,36 @@ impl HostUiApp {
             qr_payload: None,
             shutdown_rx,
             shutdown_initiated: false,
+            visuals_applied: false,
         };
 
+        app.apply_visuals_once(&cc.egui_ctx);
         app.refresh_qr_texture(&cc.egui_ctx);
         app.daemon.send(DaemonCommand::Refresh);
-        apply_visuals(&cc.egui_ctx);
         app
+    }
+
+    fn apply_visuals_once(&mut self, ctx: &egui::Context) {
+        if self.visuals_applied {
+            return;
+        }
+        self.visuals_applied = true;
+
+        // Compatible with older egui: do NOT touch egui::Shadow or Frame::shadow.
+        let mut visuals = egui::Visuals::light();
+        visuals.window_rounding = egui::Rounding::same(16.0);
+        visuals.menu_rounding = egui::Rounding::same(12.0);
+        visuals.widgets.inactive.rounding = egui::Rounding::same(12.0);
+        visuals.widgets.hovered.rounding = egui::Rounding::same(12.0);
+        visuals.widgets.active.rounding = egui::Rounding::same(12.0);
+        visuals.widgets.noninteractive.rounding = egui::Rounding::same(12.0);
+
+        // Slightly nicer strokes
+        visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, Color32::from_rgb(220, 225, 233));
+        visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, Color32::from_rgb(200, 207, 220));
+        visuals.widgets.active.bg_stroke = Stroke::new(1.0, Color32::from_rgb(140, 170, 220));
+
+        ctx.set_visuals(visuals);
     }
 
     fn refresh_qr_texture(&mut self, ctx: &egui::Context) {
@@ -199,6 +236,7 @@ impl HostUiApp {
             "ui",
             format!("Refreshing QR texture; payload_len={}", payload.len()),
         );
+
         if let Some(image) = qr_to_image(&payload, 4) {
             self.qr_texture =
                 Some(ctx.load_texture("pairing_qr", image, egui::TextureOptions::NEAREST));
@@ -211,8 +249,9 @@ impl HostUiApp {
 
 impl eframe::App for HostUiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        apply_visuals(ctx);
-        // Shutdown handling
+        self.apply_visuals_once(ctx);
+
+        // Shutdown handling (only via main's ctrlc handler channel)
         if !self.shutdown_initiated {
             match self.shutdown_rx.try_recv() {
                 Ok(()) => {
@@ -259,12 +298,14 @@ impl eframe::App for HostUiApp {
 
         self.refresh_qr_texture(ctx);
 
+        // UI palette + subtle animation
         let palette = UiPalette::new();
         let time = ctx.input(|i| i.time) as f32;
-        let pulse = (time * 1.4).sin() * 0.5 + 0.5;
+        let pulse = (time * 1.2).sin() * 0.5 + 0.5;
         let accent = lerp_color(palette.accent, palette.accent_glow, pulse);
         let state_color = state_color(self.status.state, &palette);
 
+        // Header
         egui::TopBottomPanel::top("header")
             .frame(card_frame(&palette, palette.header))
             .show(ctx, |ui| {
@@ -277,11 +318,12 @@ impl eframe::App for HostUiApp {
                                 .color(palette.text),
                         );
                         ui.label(
-                            RichText::new("Centro de controle do streaming local")
-                                .size(14.0)
+                            RichText::new("Local streaming host control panel")
+                                .size(13.0)
                                 .color(palette.subtle_text),
                         );
                     });
+
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         status_pill(
                             ui,
@@ -289,53 +331,70 @@ impl eframe::App for HostUiApp {
                             daemon_label(self.status.connected),
                             state_color,
                         );
-                        ui.add_space(12.0);
-                        status_pill(ui, "Estado", self.status.state.label(), accent);
+                        ui.add_space(10.0);
+                        status_pill(ui, "State", self.status.state.label(), accent);
                     });
                 });
             });
 
+        // Content
         egui::CentralPanel::default()
             .frame(egui::Frame::none().fill(palette.background))
             .show(ctx, |ui| {
                 ui.add_space(12.0);
-                ui.columns(2, |columns| {
-                    let left = &mut columns[0];
-                    let right = &mut columns[1];
 
+                ui.columns(2, |columns| {
+                    // Fix borrow checker: split slice into two disjoint mutable slices
+                    let (left_slice, right_slice) = columns.split_at_mut(1);
+                    let left = &mut left_slice[0];
+                    let right = &mut right_slice[0];
+
+                    // Left: Session summary
                     card_frame(&palette, palette.card).show(left, |ui| {
-                        section_header(ui, "Status da Sessão");
-                        ui.add_space(4.0);
-                        info_row(ui, "Estado", self.status.state.label());
-                        info_row(ui, "Daemon", daemon_label(self.status.connected));
-                        info_row(ui, "Socket", "Monitorando localmente");
+                        section_header(ui, "Session");
+                        ui.add_space(8.0);
+
+                        info_row(ui, "State", self.status.state.label(), &palette);
+                        info_row(ui, "Daemon", daemon_label(self.status.connected), &palette);
+                        info_row(ui, "Socket", "Local IPC (Unix socket)", &palette);
+
                         ui.add_space(12.0);
+
                         if self.status.state == UiState::Streaming {
                             ui.add(
                                 egui::ProgressBar::new(1.0)
                                     .desired_width(f32::INFINITY)
                                     .fill(accent)
-                                    .text("Transmitindo agora"),
+                                    .text("Streaming"),
+                            );
+                        } else if self.status.connected {
+                            ui.add(
+                                egui::ProgressBar::new(0.65)
+                                    .desired_width(f32::INFINITY)
+                                    .fill(Color32::from_rgb(140, 190, 255))
+                                    .text("Ready"),
                             );
                         } else {
                             ui.add(
-                                egui::ProgressBar::new(0.4)
+                                egui::ProgressBar::new(0.25)
                                     .desired_width(f32::INFINITY)
                                     .fill(palette.muted)
-                                    .text("Aguardando ação"),
+                                    .text("Connecting…"),
                             );
                         }
                     });
 
                     left.add_space(16.0);
 
+                    // Left: Controls
                     card_frame(&palette, palette.card).show(left, |ui| {
-                        section_header(ui, "Controles Rápidos");
-                        ui.add_space(8.0);
+                        section_header(ui, "Controls");
+                        ui.add_space(10.0);
+
                         ui.horizontal(|ui| {
                             let start = ui.add_enabled(
                                 self.status.state != UiState::Streaming,
-                                primary_button("▶ Iniciar"),
+                                primary_button("▶ Start"),
                             );
                             if start.clicked() {
                                 loggins::info("ui", "Start clicked");
@@ -344,78 +403,83 @@ impl eframe::App for HostUiApp {
 
                             let stop = ui.add_enabled(
                                 self.status.state == UiState::Streaming,
-                                secondary_button("■ Parar"),
+                                secondary_button("■ Stop"),
                             );
                             if stop.clicked() {
                                 loggins::info("ui", "Stop clicked");
                                 self.daemon.send(DaemonCommand::StopStream);
                             }
 
-                            if ui.add(ghost_button("↻ Atualizar")).clicked() {
+                            if ui.add(ghost_button("↻ Refresh")).clicked() {
                                 loggins::info("ui", "Refresh clicked");
                                 self.daemon.send(DaemonCommand::Refresh);
                             }
                         });
+
                         ui.add_space(12.0);
                         ui.label(
-                            RichText::new("Dica: mantenha o Parallax aberto para parear novos clientes.")
-                                .size(13.0)
-                                .color(palette.subtle_text),
+                            RichText::new(
+                                "Tip: Keep Parallax Host running to allow pairing new clients.",
+                            )
+                            .size(13.0)
+                            .color(palette.subtle_text),
                         );
                     });
 
+                    // Left: Messages
                     if let Some(err) = &self.last_error {
                         left.add_space(16.0);
                         card_frame(&palette, palette.error_bg).show(left, |ui| {
-                            section_header_colored(ui, "Erro do daemon", palette.error);
-                            ui.label(
-                                RichText::new(err)
-                                    .size(13.0)
-                                    .color(palette.text),
-                            );
+                            section_header_colored(ui, "Daemon Error", palette.error);
+                            ui.add_space(6.0);
+                            ui.label(RichText::new(err).size(13.0).color(palette.text));
                         });
                     }
 
                     if let Some(warning) = &self.last_warning {
                         left.add_space(16.0);
                         card_frame(&palette, palette.warning_bg).show(left, |ui| {
-                            section_header_colored(ui, "Aviso", palette.warning);
-                            ui.label(
-                                RichText::new(warning)
-                                    .size(13.0)
-                                    .color(palette.text),
-                            );
+                            section_header_colored(ui, "Warning", palette.warning);
+                            ui.add_space(6.0);
+                            ui.label(RichText::new(warning).size(13.0).color(palette.text));
                         });
                     }
 
+                    // Right: Pairing card
                     card_frame(&palette, palette.card).show(right, |ui| {
-                        section_header(ui, "Pareamento seguro");
-                        ui.add_space(8.0);
-                        let pin_text = self.status.pin.as_deref().unwrap_or("----");
+                        section_header(ui, "Secure Pairing");
+                        ui.add_space(10.0);
+
                         ui.label(
-                            RichText::new("PIN de acesso")
+                            RichText::new("Access PIN")
                                 .size(13.0)
                                 .color(palette.subtle_text),
                         );
+
+                        let pin_text = self.status.pin.as_deref().unwrap_or("----");
                         ui.label(
                             RichText::new(pin_text)
-                                .size(36.0)
-                                .font(FontId::proportional(36.0))
+                                .size(38.0)
+                                .font(FontId::proportional(38.0))
                                 .strong()
                                 .color(palette.text),
                         );
+
                         ui.add_space(12.0);
+
                         ui.label(
                             RichText::new("QR Code")
                                 .size(13.0)
                                 .color(palette.subtle_text),
                         );
-                        ui.add_space(6.0);
+                        ui.add_space(8.0);
+
                         let qr_frame = egui::Frame::none()
                             .fill(palette.qr_bg)
                             .rounding(egui::Rounding::same(18.0))
                             .stroke(Stroke::new(1.0, palette.card_border))
                             .inner_margin(egui::Margin::same(12.0));
+
                         qr_frame.show(ui, |ui| {
                             ui.vertical_centered(|ui| {
                                 if let Some(texture) = &self.qr_texture {
@@ -423,17 +487,18 @@ impl eframe::App for HostUiApp {
                                     ui.image((texture.id(), size));
                                 } else {
                                     ui.label(
-                                        RichText::new("Nenhum QR disponível.")
+                                        RichText::new("No QR payload from daemon.")
                                             .size(13.0)
                                             .color(palette.subtle_text),
                                     );
                                 }
                             });
                         });
+
                         ui.add_space(12.0);
                         ui.label(
                             RichText::new(
-                                "Abra o app cliente e escaneie o QR para iniciar a transmissão com segurança.",
+                                "Open the client app and scan the QR to connect securely.",
                             )
                             .size(13.0)
                             .color(palette.subtle_text),
@@ -452,6 +517,10 @@ impl Drop for HostUiApp {
         self.daemon.send(DaemonCommand::Shutdown);
     }
 }
+
+// --------------------------
+// Daemon client (Unix socket)
+// --------------------------
 
 struct DaemonClient {
     socket_path: PathBuf,
@@ -514,7 +583,6 @@ impl DaemonClient {
                 self.ensure_connected();
             }
 
-            // NOTE: This "connected" is socket-level; useful for UI visibility.
             let socket_connected = self.writer.is_some();
             if socket_connected && !self.status.connected {
                 self.status.connected = true;
@@ -546,6 +614,7 @@ impl DaemonClient {
             "daemon_client",
             format!("Attempting connect to {:?}", self.socket_path),
         );
+
         match UnixStream::connect(&self.socket_path) {
             Ok(stream) => {
                 loggins::info("daemon_client", "UnixStream connected");
@@ -621,6 +690,7 @@ impl DaemonClient {
             "daemon_spawn",
             "PATH spawn failed; attempting discover_local_hostd()",
         );
+
         if let Some(path) = discover_local_hostd() {
             loggins::info("daemon_spawn", format!("Attempting spawn from {:?}", path));
             if let Ok(child) = Command::new(path)
@@ -652,7 +722,6 @@ impl DaemonClient {
         self.send_line("status", "poll status");
     }
 
-    /// IMPORTANT: drains all available lines so we don't "lag behind" and look stuck.
     fn read_responses_drain(&mut self) {
         let Some(reader) = self.reader.as_mut() else {
             return;
@@ -675,7 +744,6 @@ impl DaemonClient {
                         continue;
                     }
 
-                    // If it's a status line, apply; otherwise surface as warning for visibility.
                     if let Some(mut status) = parse_status(&raw) {
                         status.connected = true;
                         loggins::debug("daemon_proto", format!("RX status: {raw}"));
@@ -754,20 +822,13 @@ impl DaemonClient {
             "daemon_client",
             format!("Flushing pending command: {command:?}"),
         );
+
         match command {
-            DaemonCommand::Refresh => {
-                self.send_line("status", "refresh");
-            }
-            DaemonCommand::StartStream => {
-                self.send_line("start", "start");
-            }
-            DaemonCommand::StopStream => {
-                self.send_line("stop", "stop");
-            }
-            DaemonCommand::Shutdown => {
-                self.send_line("stop", "shutdown");
-            }
-        }
+            DaemonCommand::Refresh => self.send_line("status", "refresh"),
+            DaemonCommand::StartStream => self.send_line("start", "start"),
+            DaemonCommand::StopStream => self.send_line("stop", "stop"),
+            DaemonCommand::Shutdown => self.send_line("stop", "shutdown"),
+        };
     }
 
     fn send_line(&mut self, line: &str, action: &str) -> bool {
@@ -828,26 +889,10 @@ impl DaemonClient {
     }
 }
 
-fn install_ctrlc_handler(command_tx: Sender<DaemonCommand>) {
-    CTRL_C_HANDLER.call_once(|| {
-        loggins::debug("ui", "Installing Ctrl-C handler (once)");
-        if let Err(err) = ctrlc::set_handler(move || {
-            loggins::info("ui", "Ctrl-C -> Shutdown");
-            let _ = command_tx.send(DaemonCommand::Shutdown);
-            let pid = CHILD_PID.load(Ordering::Relaxed);
-            if pid > 0 {
-                unsafe {
-                    libc::kill(pid, libc::SIGTERM);
-                }
-            }
-        }) {
-            loggins::error("ui", format!("Failed to install Ctrl-C handler: {err}"));
-        }
-    });
-}
+// --------------------------
+// Protocol helpers
+// --------------------------
 
-/// Returns Some(status) only if line contained a recognized key.
-/// This prevents random log lines from resetting UI to defaults.
 fn parse_status(line: &str) -> Option<DaemonStatus> {
     let mut status = DaemonStatus::default();
     let mut saw_any = false;
@@ -909,6 +954,10 @@ fn qr_to_image(payload: &str, scale: usize) -> Option<ColorImage> {
     })
 }
 
+// --------------------------
+// UI design helpers (no shadows)
+// --------------------------
+
 struct UiPalette {
     background: Color32,
     header: Color32,
@@ -937,7 +986,7 @@ impl UiPalette {
             text: Color32::from_rgb(18, 22, 29),
             subtle_text: Color32::from_rgb(104, 112, 125),
             accent: Color32::from_rgb(0, 122, 255),
-            accent_glow: Color32::from_rgb(88, 168, 255),
+            accent_glow: Color32::from_rgb(90, 170, 255),
             muted: Color32::from_rgb(210, 214, 221),
             error: Color32::from_rgb(201, 61, 72),
             error_bg: Color32::from_rgb(255, 238, 240),
@@ -947,34 +996,11 @@ impl UiPalette {
     }
 }
 
-fn apply_visuals(ctx: &egui::Context) {
-    let mut visuals = egui::Visuals::light();
-    visuals.window_rounding = egui::Rounding::same(18.0);
-    visuals.menu_rounding = egui::Rounding::same(12.0);
-    visuals.widgets.inactive.rounding = egui::Rounding::same(12.0);
-    visuals.widgets.hovered.rounding = egui::Rounding::same(12.0);
-    visuals.widgets.active.rounding = egui::Rounding::same(12.0);
-    visuals.widgets.noninteractive.rounding = egui::Rounding::same(12.0);
-    visuals.window_shadow = egui::Shadow {
-        extrusion: 18.0,
-        color: Color32::from_black_alpha(20),
-    };
-    visuals.popup_shadow = egui::Shadow {
-        extrusion: 12.0,
-        color: Color32::from_black_alpha(25),
-    };
-    ctx.set_visuals(visuals);
-}
-
 fn card_frame(palette: &UiPalette, fill: Color32) -> egui::Frame {
     egui::Frame::none()
         .fill(fill)
         .rounding(egui::Rounding::same(18.0))
         .stroke(Stroke::new(1.0, palette.card_border))
-        .shadow(egui::Shadow {
-            extrusion: 16.0,
-            color: Color32::from_black_alpha(22),
-        })
         .inner_margin(egui::Margin::same(16.0))
 }
 
@@ -989,9 +1015,9 @@ fn state_color(state: UiState, palette: &UiPalette) -> Color32 {
 
 fn daemon_label(connected: bool) -> &'static str {
     if connected {
-        "Conectado"
+        "Connected"
     } else {
-        "Conectando..."
+        "Connecting…"
     }
 }
 
@@ -1000,6 +1026,7 @@ fn status_pill(ui: &mut egui::Ui, label: &str, value: &str, color: Color32) {
         .fill(color)
         .rounding(egui::Rounding::same(999.0))
         .inner_margin(egui::Margin::symmetric(12.0, 6.0));
+
     ui.vertical(|ui| {
         ui.label(
             RichText::new(label)
@@ -1025,19 +1052,11 @@ fn section_header_colored(ui: &mut egui::Ui, title: &str, color: Color32) {
     ui.label(RichText::new(title).size(16.0).strong().color(color));
 }
 
-fn info_row(ui: &mut egui::Ui, label: &str, value: &str) {
+fn info_row(ui: &mut egui::Ui, label: &str, value: &str, palette: &UiPalette) {
     ui.horizontal(|ui| {
-        ui.label(
-            RichText::new(label)
-                .size(13.0)
-                .color(Color32::from_rgb(96, 104, 118)),
-        );
+        ui.label(RichText::new(label).size(13.0).color(palette.subtle_text));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            ui.label(
-                RichText::new(value)
-                    .size(13.0)
-                    .color(Color32::from_rgb(24, 28, 36)),
-            );
+            ui.label(RichText::new(value).size(13.0).color(palette.text));
         });
     });
 }
@@ -1075,6 +1094,10 @@ fn lerp_color(from: Color32, to: Color32, t: f32) -> Color32 {
     let b = from.b() as f32 + (to.b() as f32 - from.b() as f32) * t;
     Color32::from_rgb(r as u8, g as u8, b as u8)
 }
+
+// --------------------------
+// Path helpers
+// --------------------------
 
 fn expand_path(path: &str) -> PathBuf {
     if let Some(rest) = path.strip_prefix("~/") {
