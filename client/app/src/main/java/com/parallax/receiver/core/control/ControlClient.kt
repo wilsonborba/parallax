@@ -18,7 +18,7 @@ class ControlClient(
     private val connectTimeoutMillis: Int = DEFAULT_TIMEOUT_MS,
     private val readTimeoutMillis: Int = DEFAULT_TIMEOUT_MS,
 ) {
-    fun openSession(host: String, port: Int, streamPort: Int): ControlSession {
+    fun openSession(host: String, port: Int, streamPort: Int? = null): ControlSession {
         val socket = Socket()
         socket.tcpNoDelay = true
         socket.soTimeout = readTimeoutMillis
@@ -36,7 +36,7 @@ class ControlClient(
     class ControlSession(
         private val socket: Socket,
         private val pairingToken: String,
-        private val streamPort: Int,
+        private val streamPort: Int?,
         private val logger: Logger,
     ) {
         private val input: InputStream = socket.getInputStream()
@@ -73,7 +73,11 @@ class ControlClient(
                 throw IllegalStateException("Expected hello ack, got ${helloAck.messageType}")
             }
 
-            val pairingPayload = "$pairingToken|$streamPort".toByteArray()
+            val pairingPayload = if (streamPort == null) {
+                pairingToken.toByteArray()
+            } else {
+                "$pairingToken|$streamPort".toByteArray()
+            }
             writeFrame(MessageType.PairRequest, pairingPayload)
             val pairingResponse = readFrame()
             when (pairingResponse.messageType) {
