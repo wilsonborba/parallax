@@ -148,11 +148,24 @@ impl StreamCoordinator for StreamController {
     }
 
     fn set_target(&self, target: String) -> Result<(), String> {
-        let mut current = self
-            .target
-            .lock()
-            .map_err(|_| "target lock poisoned".to_string())?;
-        *current = Some(target);
+        {
+            let mut current = self
+                .target
+                .lock()
+                .map_err(|_| "target lock poisoned".to_string())?;
+            *current = Some(target);
+        }
+        let should_restart = {
+            let state = self
+                .state
+                .lock()
+                .map_err(|_| "stream lock poisoned".to_string())?;
+            state.handle.is_some()
+        };
+        if should_restart {
+            self.stop_stream()?;
+            self.start_stream()?;
+        }
         Ok(())
     }
 }
