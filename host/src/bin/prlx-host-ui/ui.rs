@@ -14,7 +14,7 @@ use crate::palette::{
 };
 use crate::qr::qr_to_image;
 use crate::widgets::{
-    daemon_label, ghost_button, info_row, lerp_color, primary_button, secondary_button,
+    accent_button, daemon_label, ghost_button, info_row, lerp_color, primary_button,
     status_chip,
 };
 
@@ -364,13 +364,16 @@ impl eframe::App for HostUiApp {
                             });
                         });
 
-                        let view_larger = ui.add_enabled(
-                            self.qr_texture.is_some(),
-                            secondary_button("View larger", &palette),
-                        );
-                        if view_larger.clicked() {
-                            self.show_qr_overlay = true;
-                        }
+                        ui.horizontal(|ui| {
+                            ui.add_space(2.0);
+                            let view_larger = ui.add_enabled(
+                                self.qr_texture.is_some(),
+                                accent_button("View larger", &palette),
+                            );
+                            if view_larger.clicked() {
+                                self.show_qr_overlay = true;
+                            }
+                        });
 
                         ui.add_space(SECTION_GAP);
                         ui.label(
