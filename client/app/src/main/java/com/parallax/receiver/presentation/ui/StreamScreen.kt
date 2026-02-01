@@ -34,6 +34,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -64,13 +67,16 @@ import com.parallax.receiver.core.config.SCALE_MIN
 import com.parallax.receiver.domain.model.StreamState
 import com.parallax.receiver.domain.model.UiState
 import com.parallax.receiver.presentation.theme.spacing
+import com.parallax.receiver.presentation.vm.StreamUiEvent
 import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
+import kotlinx.coroutines.flow.Flow
 
 @Composable
 fun StreamScreen(
     uiState: UiState,
+    uiEvents: Flow<StreamUiEvent>,
     onStartClicked: () -> Unit,
     onStopClicked: () -> Unit,
     onScaleChanged: (Float) -> Unit,
@@ -87,64 +93,79 @@ fun StreamScreen(
     val status = uiState.streamState.status
     var controlsVisible by remember { mutableStateOf(false) }
     var autoFitApplied by remember { mutableStateOf(false) }
-    Surface(
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(uiEvents) {
+        uiEvents.collect { event ->
+            if (event is StreamUiEvent.ShowMessage) {
+                snackbarHostState.showSnackbar(event.message)
+            }
+        }
+    }
+    Scaffold(
         modifier = modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
-        tonalElevation = 0.dp,
-    ) {
-        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-            val aspectRatio = DEFAULT_REMOTE_WIDTH.toFloat() / DEFAULT_REMOTE_HEIGHT.toFloat()
-            var baseWidth = maxWidth
-            var baseHeight = maxWidth / aspectRatio
-            if (baseHeight > maxHeight) {
-                baseHeight = maxHeight
-                baseWidth = baseHeight * aspectRatio
-            }
-            if (!autoFitApplied) {
-                onScaleChanged(1f)
-                autoFitApplied = true
-            }
-            Box(modifier = Modifier.fillMaxSize()) {
-                VideoArea(
-                    baseWidth = baseWidth,
-                    baseHeight = baseHeight,
-                    scale = uiState.config.scale,
-                    onSurfaceAvailable = onSurfaceAvailable,
-                    onSurfaceDestroyed = onSurfaceDestroyed,
-                    modifier = Modifier.fillMaxSize(),
-                )
-                StreamStatusBadge(
-                    status = status,
-                    message = uiState.streamState.message,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(spacing.medium),
-                )
-                ControlsToggle(
-                    expanded = controlsVisible,
-                    onToggle = { controlsVisible = !controlsVisible },
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(spacing.medium),
-                )
-                if (controlsVisible) {
-                    ControlsPanel(
-                        uiState = uiState,
-                        onStartClicked = onStartClicked,
-                        onStopClicked = onStopClicked,
-                        onScaleChanged = onScaleChanged,
-                        onHostChanged = onHostChanged,
-                        onStreamPortChanged = onStreamPortChanged,
-                        onControlPortChanged = onControlPortChanged,
-                        onAccessPinChanged = onAccessPinChanged,
-                        onQrPayloadScanned = onQrPayloadScanned,
-                        status = status,
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(spacing.large)
-                            .widthIn(max = 360.dp)
-                            .fillMaxWidth(),
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+    ) { innerPadding ->
+        Surface(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+            color = MaterialTheme.colorScheme.background,
+            tonalElevation = 0.dp,
+        ) {
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val aspectRatio = DEFAULT_REMOTE_WIDTH.toFloat() / DEFAULT_REMOTE_HEIGHT.toFloat()
+                var baseWidth = maxWidth
+                var baseHeight = maxWidth / aspectRatio
+                if (baseHeight > maxHeight) {
+                    baseHeight = maxHeight
+                    baseWidth = baseHeight * aspectRatio
+                }
+                if (!autoFitApplied) {
+                    onScaleChanged(1f)
+                    autoFitApplied = true
+                }
+                Box(modifier = Modifier.fillMaxSize()) {
+                    VideoArea(
+                        baseWidth = baseWidth,
+                        baseHeight = baseHeight,
+                        scale = uiState.config.scale,
+                        onSurfaceAvailable = onSurfaceAvailable,
+                        onSurfaceDestroyed = onSurfaceDestroyed,
+                        modifier = Modifier.fillMaxSize(),
                     )
+                    StreamStatusBadge(
+                        status = status,
+                        message = uiState.streamState.message,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(spacing.medium),
+                    )
+                    ControlsToggle(
+                        expanded = controlsVisible,
+                        onToggle = { controlsVisible = !controlsVisible },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(spacing.medium),
+                    )
+                    if (controlsVisible) {
+                        ControlsPanel(
+                            uiState = uiState,
+                            onStartClicked = onStartClicked,
+                            onStopClicked = onStopClicked,
+                            onScaleChanged = onScaleChanged,
+                            onHostChanged = onHostChanged,
+                            onStreamPortChanged = onStreamPortChanged,
+                            onControlPortChanged = onControlPortChanged,
+                            onAccessPinChanged = onAccessPinChanged,
+                            onQrPayloadScanned = onQrPayloadScanned,
+                            status = status,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(spacing.large)
+                                .widthIn(max = 360.dp)
+                                .fillMaxWidth(),
+                        )
+                    }
                 }
             }
         }

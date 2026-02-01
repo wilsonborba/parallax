@@ -43,6 +43,7 @@ class MainActivity : ComponentActivity() {
                     val uiState by streamViewModel.uiState.collectAsState()
                     StreamScreen(
                         uiState = uiState,
+                        uiEvents = streamViewModel.uiEvents,
                         onStartClicked = streamViewModel::onStartClicked,
                         onStopClicked = streamViewModel::onStopClicked,
                         onScaleChanged = streamViewModel::onScaleChanged,
