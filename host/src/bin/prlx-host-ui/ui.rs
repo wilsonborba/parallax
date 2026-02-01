@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Duration;
-
+use crate::widgets::secondary_button;
 use eframe::egui::{
     self, Align, Color32, FontId, Layout, RichText, Stroke, TextureHandle,
 };

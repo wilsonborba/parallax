@@ -6,6 +6,23 @@
 - *(stream)* Initial test run sucessful
 - *(stream)* Initial android app started
 - *(stream)* Port and host changed
+- *(ui)* Fullscreen stream with overlay controls
+- *(stream)* Depacketize PRLX UDP frames
+- *(ui)* Improved the design of the ui
+- *(ui)* Improved the design of the ui 2
+
+### 🐛 Bug Fixes
+
+- *(ui)* Drop rememberSaveable dependency
+- *(stream)* Log receiver errors with metadata
+- *(ui)* Remove unsupported keyboard options
+- *(stream)* Wait for render surface before streaming
+- *(stream)* Create surface while connecting
+- *(borrow)* Fixed a borrow error
+- *(ui)* Added some debug message on ui for debug
+- *(ui)* Fixed the streaming not starting
+- *(ui)* Fixed the streaming not starting
+- *(btn)* Import error
 
 ### ⚙️ Miscellaneous Tasks
 
