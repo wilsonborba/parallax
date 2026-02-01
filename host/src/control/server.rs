@@ -180,14 +180,21 @@ pub fn run_with_shutdown(config: ControlConfig, running: Arc<AtomicBool>) -> Res
     let stream_controller = Arc::new(StreamController::new(config.stream.clone()));
     let pairing_token = resolve_pairing_token(&config.pairing_token);
 
+    let local_ip = resolve_local_ip().unwrap_or_else(|| "127.0.0.1".to_string());
+    let mut qr_uri = format!("prlx://{}:{}", local_ip, control_addr.port());
+    let mut query_parts = Vec::new();
+    if let Some(stream_port) = parse_port(&config.stream.target_addr) {
+        query_parts.push(format!("streamPort={stream_port}"));
+    }
+    if !query_parts.is_empty() {
+        qr_uri.push('?');
+        qr_uri.push_str(&query_parts.join("&"));
+    }
+
     let daemon_status = Arc::new(Mutex::new(DaemonStatus {
         state: DaemonState::Waiting,
         pin: Some(pairing_token.clone()),
-        qr_uri: Some(format!(
-            "prlx://{}:{}",
-            resolve_local_ip().unwrap_or_else(|| "127.0.0.1".to_string()),
-            control_addr.port()
-        )),
+        qr_uri: Some(qr_uri),
     }));
 
     // ✅ IMPORTANT: print the resolved socket path so you can verify it matches the UI.
