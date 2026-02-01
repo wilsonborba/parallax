@@ -119,7 +119,7 @@ impl HostUiApp {
             format!("Refreshing QR texture; payload_len={}", payload.len()),
         );
 
-        if let Some(image) = qr_to_image(&payload, 4) {
+        if let Some(image) = qr_to_image(&payload, 8) {
             self.qr_texture =
                 Some(ctx.load_texture("pairing_qr", image, egui::TextureOptions::NEAREST));
             self.qr_payload = Some(payload);
@@ -395,7 +395,7 @@ impl eframe::App for HostUiApp {
 
         if self.show_qr_overlay {
             let screen_rect = ctx.screen_rect();
-            let overlay_padding = 24.0;
+            let overlay_padding = 40.0;
             let padded_rect = screen_rect.shrink(overlay_padding);
 
             egui::Area::new("qr_overlay_backdrop".into())
@@ -416,6 +416,7 @@ impl eframe::App for HostUiApp {
                 .order(egui::Order::Foreground)
                 .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
                 .show(ctx, |ui| {
+                    ui.set_max_size(padded_rect.size());
                     let frame = egui::Frame::none()
                         .fill(palette.card)
                         .rounding(egui::Rounding::same(18.0))
@@ -443,11 +444,9 @@ impl eframe::App for HostUiApp {
                             ui.add_space(12.0);
                             if let Some(texture) = &self.qr_texture {
                                 let mut size = texture.size_vec2();
-                                let max_side = ((padded_rect.width().min(padded_rect.height()))
-                                    * 0.85)
-                                .min(560.0);
-                                let scale =
-                                    (max_side / size.x).min(max_side / size.y).min(1.0);
+                                let max_side =
+                                    padded_rect.width().min(padded_rect.height()) * 0.9;
+                                let scale = (max_side / size.x).min(max_side / size.y);
                                 size *= scale;
                                 ui.image((texture.id(), size));
                             }
