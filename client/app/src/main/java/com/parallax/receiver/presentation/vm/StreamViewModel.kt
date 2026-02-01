@@ -74,6 +74,7 @@ class StreamViewModel(
         setStreamEndpoint.setHost(endpoint.host)
         setStreamEndpoint.setControlPort(endpoint.controlPort)
         endpoint.streamPort?.let { setStreamEndpoint.setStreamPort(it) }
+        _uiEvents.tryEmit(StreamUiEvent.ShowMessage(buildQrSuccessMessage(endpoint)))
     }
 
     fun onSurfaceAvailable(surface: Surface) {
@@ -109,7 +110,15 @@ class StreamViewModel(
 
     companion object {
         private const val TAG = "StreamViewModel"
-        private const val UNSUPPORTED_QR_MESSAGE = "Unsupported QR code. Expected prlx://host."
+        private const val UNSUPPORTED_QR_MESSAGE = "Unsupported QR code. Expected prlx://host:port."
+        private fun buildQrSuccessMessage(endpoint: com.parallax.receiver.core.qr.QrEndpoint): String {
+            val portSuffix = if (endpoint.streamPort == null) {
+                "Control port set to ${endpoint.controlPort}."
+            } else {
+                "Control ${endpoint.controlPort}, stream ${endpoint.streamPort}."
+            }
+            return "QR scanned. Host set to ${endpoint.host}. $portSuffix"
+        }
     }
 }
 
