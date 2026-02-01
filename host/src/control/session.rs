@@ -107,6 +107,10 @@ impl Session {
         let (token, target_port) = match parse_pair_request(payload) {
             Ok(token) => token,
             Err(_) => {
+                eprintln!(
+                    "[control] PairRequest parse failed from {} (state={:?})",
+                    self.client_addr, self.state
+                );
                 return vec![Frame::new(
                     MessageType::PairReject,
                     b"invalid token encoding".to_vec(),
@@ -116,6 +120,10 @@ impl Session {
 
         if token == self.pairing_token {
             if self.state == HandshakeState::AwaitAuth {
+                eprintln!(
+                    "[control] PairRequest received while auth pending from {}",
+                    self.client_addr
+                );
                 return vec![Frame::new(
                     MessageType::Error,
                     b"auth in progress".to_vec(),
@@ -124,14 +132,26 @@ impl Session {
             if let Some(target_port) = target_port.or(self.default_target_port) {
                 let target = format!("{}:{}", self.client_addr.ip(), target_port);
                 if let Err(err) = self.stream.set_target(target) {
+                    eprintln!(
+                        "[control] Failed to set stream target for {}: {}",
+                        self.client_addr, err
+                    );
                     return vec![Frame::new(MessageType::Error, err.into_bytes())];
                 }
             }
+            eprintln!(
+                "[control] PairRequest accepted for {} (token match, target_port={:?})",
+                self.client_addr, target_port
+            );
             let nonce = self.next_nonce();
             self.pending_nonce = Some(nonce);
             self.state = HandshakeState::AwaitAuth;
             vec![Frame::new(MessageType::AuthChallenge, nonce.to_vec())]
         } else {
+            eprintln!(
+                "[control] PairRequest rejected for {} (token mismatch)",
+                self.client_addr
+            );
             vec![Frame::new(
                 MessageType::PairReject,
                 b"invalid token".to_vec(),
@@ -141,6 +161,10 @@ impl Session {
 
     fn handle_auth_response(&mut self, payload: Vec<u8>) -> Vec<Frame> {
         if self.state != HandshakeState::AwaitAuth {
+            eprintln!(
+                "[control] AuthResponse unexpected from {} (state={:?})",
+                self.client_addr, self.state
+            );
             return vec![Frame::new(
                 MessageType::Error,
                 b"auth not expected".to_vec(),
@@ -148,6 +172,11 @@ impl Session {
         }
 
         if payload.len() != crypto::HMAC_LEN {
+            eprintln!(
+                "[control] AuthResponse invalid length from {} (len={})",
+                self.client_addr,
+                payload.len()
+            );
             return vec![Frame::new(
                 MessageType::Error,
                 b"invalid auth payload".to_vec(),
@@ -157,6 +186,10 @@ impl Session {
         let nonce = match self.pending_nonce.take() {
             Some(nonce) => nonce,
             None => {
+                eprintln!(
+                    "[control] AuthResponse missing nonce for {}",
+                    self.client_addr
+                );
                 return vec![Frame::new(
                     MessageType::Error,
                     b"auth challenge missing".to_vec(),
@@ -165,6 +198,10 @@ impl Session {
         };
 
         if self.used_nonces.contains(&nonce) {
+            eprintln!(
+                "[control] AuthResponse nonce reused for {}",
+                self.client_addr
+            );
             return vec![Frame::new(
                 MessageType::Error,
                 b"nonce reused".to_vec(),
@@ -173,6 +210,10 @@ impl Session {
 
         let session_key = crypto::derive_session_key(&self.master_key, &nonce);
         if !crypto::verify_hmac_sha256(&session_key, &nonce, &payload) {
+            eprintln!(
+                "[control] AuthResponse HMAC failed for {}",
+                self.client_addr
+            );
             return vec![Frame::new(
                 MessageType::PairReject,
                 b"auth failed".to_vec(),

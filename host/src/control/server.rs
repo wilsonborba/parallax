@@ -186,6 +186,9 @@ pub fn run_with_shutdown(config: ControlConfig, running: Arc<AtomicBool>) -> Res
     if let Some(stream_port) = parse_port(&config.stream.target_addr) {
         query_parts.push(format!("streamPort={stream_port}"));
     }
+    if !pairing_token.is_empty() {
+        query_parts.push(format!("pin={pairing_token}"));
+    }
     if !query_parts.is_empty() {
         qr_uri.push('?');
         qr_uri.push_str(&query_parts.join("&"));
