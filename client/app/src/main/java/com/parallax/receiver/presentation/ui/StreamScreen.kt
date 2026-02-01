@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -33,7 +34,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -215,16 +215,16 @@ private fun ControlsPanel(
     Surface(
         modifier = modifier,
         shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-        tonalElevation = 6.dp,
-        shadowElevation = 12.dp,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
+        tonalElevation = 2.dp,
+        shadowElevation = 6.dp,
     ) {
         Column(
             modifier = Modifier
                 .clip(MaterialTheme.shapes.extraLarge)
                 .border(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
+                    width = 0.5.dp,
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f),
                     shape = MaterialTheme.shapes.extraLarge,
                 )
                 .padding(spacing.large),
@@ -240,12 +240,13 @@ private fun ControlsPanel(
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
-                IconButton(onClick = onClose) {
+                FilledTonalButton(onClick = onClose) {
                     Icon(
                         imageVector = Icons.Default.Close,
-                        contentDescription = "Hide controls",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        contentDescription = null,
                     )
+                    Spacer(modifier = Modifier.width(spacing.small))
+                    Text("Hide controls")
                 }
             }
             ConnectionSettings(
@@ -276,9 +277,6 @@ private fun ControlsPanel(
                 scale = uiState.config.scale,
                 onScaleChanged = onScaleChanged,
             )
-            OutlinedButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) {
-                Text("Hide controls")
-            }
         }
     }
     if (showScanner) {
@@ -673,17 +671,26 @@ private fun ControlsToggle(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = modifier.clickable(onClick = onToggle),
+        modifier = modifier
+            .clip(MaterialTheme.shapes.extraLarge)
+            .clickable(onClick = onToggle),
         shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-        tonalElevation = 3.dp,
-        shadowElevation = 8.dp,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
+        tonalElevation = 1.dp,
+        shadowElevation = 4.dp,
     ) {
         Text(
             text = if (expanded) "Hide" else "Controls",
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            modifier = Modifier
+                .border(
+                    width = 0.5.dp,
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                    shape = MaterialTheme.shapes.extraLarge,
+                )
+                .defaultMinSize(minHeight = 48.dp)
+                .padding(horizontal = 18.dp, vertical = 12.dp),
         )
     }
 }
