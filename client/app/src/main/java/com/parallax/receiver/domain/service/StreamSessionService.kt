@@ -57,6 +57,15 @@ class StreamSessionService(
     fun startStream(config: StreamConfig) {
         connectionJob?.cancel()
         pendingStartConfig = config
+        logger.info(
+            TAG,
+            "Start stream requested",
+            mapOf(
+                "host" to config.host,
+                "controlPort" to config.controlPort,
+                "streamPort" to config.streamPort,
+            ),
+        )
         mutableState.value = UiState(
             config = config,
             streamState = StreamState(StreamState.Status.Connecting),
@@ -191,6 +200,15 @@ class StreamSessionService(
         }
         return try {
             val pairingToken = resolvePairingToken(config)
+            logger.info(
+                TAG,
+                "Opening control session",
+                mapOf(
+                    "host" to config.host,
+                    "controlPort" to config.controlPort,
+                    "streamPort" to config.streamPort,
+                ),
+            )
             controlClient = ControlClient(pairingToken = pairingToken, logger = logger)
             val session = controlClient.openSession(
                 config.host,
