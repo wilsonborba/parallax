@@ -90,7 +90,7 @@ impl StreamCoordinator for StreamController {
             .map_err(|_| "stream lock poisoned".to_string())?;
 
         if state.handle.is_some() {
-            return Err("stream already running".to_string());
+            return Ok(());
         }
 
         let target = {
@@ -148,11 +148,24 @@ impl StreamCoordinator for StreamController {
     }
 
     fn set_target(&self, target: String) -> Result<(), String> {
-        let mut current = self
-            .target
-            .lock()
-            .map_err(|_| "target lock poisoned".to_string())?;
-        *current = Some(target);
+        {
+            let mut current = self
+                .target
+                .lock()
+                .map_err(|_| "target lock poisoned".to_string())?;
+            *current = Some(target);
+        }
+        let should_restart = {
+            let state = self
+                .state
+                .lock()
+                .map_err(|_| "stream lock poisoned".to_string())?;
+            state.handle.is_some()
+        };
+        if should_restart {
+            self.stop_stream()?;
+            self.start_stream()?;
+        }
         Ok(())
     }
 }
@@ -185,6 +198,9 @@ pub fn run_with_shutdown(config: ControlConfig, running: Arc<AtomicBool>) -> Res
     let mut query_parts = Vec::new();
     if let Some(stream_port) = parse_port(&config.stream.target_addr) {
         query_parts.push(format!("streamPort={stream_port}"));
+    }
+    if !pairing_token.is_empty() {
+        query_parts.push(format!("pin={pairing_token}"));
     }
     if !query_parts.is_empty() {
         qr_uri.push('?');
