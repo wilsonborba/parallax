@@ -1,21 +1,18 @@
+use crate::widgets::secondary_button;
+use eframe::egui::{self, Align, Color32, FontId, Layout, RichText, Stroke, TextureHandle};
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Duration;
-use crate::widgets::secondary_button;
-use eframe::egui::{
-    self, Align, Color32, FontId, Layout, RichText, Stroke, TextureHandle,
-};
 
 use host::core::logging as loggins;
 
 use crate::daemon::{DaemonCommand, DaemonEvent, DaemonHandle, DaemonStatus, UiState};
 use crate::palette::{
-    card_frame, header_frame, section_header, section_header_colored, UiPalette, OUTER_MARGIN,
+    OUTER_MARGIN, UiPalette, card_frame, header_frame, section_header, section_header_colored,
 };
 use crate::qr::qr_to_image;
 use crate::widgets::{
-    accent_button, daemon_label, ghost_button, info_row, lerp_color, primary_button,
-    status_chip,
+    accent_button, daemon_label, ghost_button, info_row, lerp_color, primary_button, status_chip,
 };
 
 // Layout constants (tune here)
@@ -444,8 +441,7 @@ impl eframe::App for HostUiApp {
                             ui.add_space(12.0);
                             if let Some(texture) = &self.qr_texture {
                                 let mut size = texture.size_vec2();
-                                let max_side =
-                                    padded_rect.width().min(padded_rect.height()) * 0.9;
+                                let max_side = padded_rect.width().min(padded_rect.height()) * 0.7;
                                 let scale = (max_side / size.x).min(max_side / size.y);
                                 size *= scale;
                                 ui.image((texture.id(), size));

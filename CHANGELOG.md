@@ -10,6 +10,7 @@
 - *(stream)* Depacketize PRLX UDP frames
 - *(ui)* Improved the design of the ui
 - *(ui)* Improved the design of the ui 2
+- *(ui)* Adjusted the size of the qr code
 
 ### 🐛 Bug Fixes
 
