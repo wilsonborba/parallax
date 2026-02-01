@@ -395,6 +395,8 @@ impl eframe::App for HostUiApp {
 
         if self.show_qr_overlay {
             let screen_rect = ctx.screen_rect();
+            let overlay_padding = 24.0;
+            let padded_rect = screen_rect.shrink(overlay_padding);
 
             egui::Area::new("qr_overlay_backdrop".into())
                 .order(egui::Order::Foreground)
@@ -441,9 +443,9 @@ impl eframe::App for HostUiApp {
                             ui.add_space(12.0);
                             if let Some(texture) = &self.qr_texture {
                                 let mut size = texture.size_vec2();
-                                let max_side =
-                                    (screen_rect.width().min(screen_rect.height()) * 0.85)
-                                        .min(560.0);
+                                let max_side = ((padded_rect.width().min(padded_rect.height()))
+                                    * 0.85)
+                                .min(560.0);
                                 let scale =
                                     (max_side / size.x).min(max_side / size.y).min(1.0);
                                 size *= scale;
