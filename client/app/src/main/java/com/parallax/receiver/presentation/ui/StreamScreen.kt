@@ -27,9 +27,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -51,6 +55,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -158,6 +163,7 @@ fun StreamScreen(
                             onControlPortChanged = onControlPortChanged,
                             onAccessPinChanged = onAccessPinChanged,
                             onQrPayloadScanned = onQrPayloadScanned,
+                            onClose = { controlsVisible = false },
                             status = status,
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
@@ -183,6 +189,7 @@ private fun ControlsPanel(
     onControlPortChanged: (Int) -> Unit,
     onAccessPinChanged: (String) -> Unit,
     onQrPayloadScanned: (String) -> Unit,
+    onClose: () -> Unit,
     status: StreamState.Status,
     modifier: Modifier = Modifier,
 ) {
@@ -207,20 +214,40 @@ private fun ControlsPanel(
     }
     Surface(
         modifier = modifier,
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-        tonalElevation = 4.dp,
-        shadowElevation = 8.dp,
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+        tonalElevation = 6.dp,
+        shadowElevation = 12.dp,
     ) {
         Column(
-            modifier = Modifier.padding(spacing.large),
+            modifier = Modifier
+                .clip(MaterialTheme.shapes.extraLarge)
+                .border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
+                    shape = MaterialTheme.shapes.extraLarge,
+                )
+                .padding(spacing.large),
             verticalArrangement = Arrangement.spacedBy(spacing.medium),
         ) {
-            Text(
-                text = "Stream controls",
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Stream controls",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                IconButton(onClick = onClose) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Hide controls",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             ConnectionSettings(
                 host = uiState.config.host,
                 streamPort = uiState.config.streamPort,
@@ -249,6 +276,9 @@ private fun ControlsPanel(
                 scale = uiState.config.scale,
                 onScaleChanged = onScaleChanged,
             )
+            OutlinedButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) {
+                Text("Hide controls")
+            }
         }
     }
     if (showScanner) {
@@ -644,16 +674,16 @@ private fun ControlsToggle(
 ) {
     Surface(
         modifier = modifier.clickable(onClick = onToggle),
-        shape = MaterialTheme.shapes.small,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-        tonalElevation = 2.dp,
-        shadowElevation = 6.dp,
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+        tonalElevation = 3.dp,
+        shadowElevation = 8.dp,
     ) {
         Text(
-            text = if (expanded) "Hide" else "Menu",
+            text = if (expanded) "Hide" else "Controls",
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
         )
     }
 }

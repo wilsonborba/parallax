@@ -105,12 +105,18 @@ class StreamSessionService(
 
     fun setRenderSurface(surface: Surface) {
         renderSurface = surface
-        if (!streamReceiver.isRunning()) {
-            val config = pendingStartConfig ?: mutableState.value.config
-            if (mutableState.value.streamState.status != StreamState.Status.Idle) {
-                val sessionReady = openControlSession(config)
-                if (!sessionReady) {
-                    return
+        if (streamReceiver.isRunning()) {
+            return
+        }
+        val config = pendingStartConfig ?: mutableState.value.config
+        when (mutableState.value.streamState.status) {
+            StreamState.Status.Idle -> Unit
+            StreamState.Status.Connecting -> {
+                if (controlSession == null) {
+                    val sessionReady = openControlSession(config)
+                    if (!sessionReady) {
+                        return
+                    }
                 }
                 startReceiver(config, surface)
                 pendingStartConfig = null
@@ -122,12 +128,32 @@ class StreamSessionService(
                     }
                 }
             }
+            StreamState.Status.Streaming -> {
+                if (controlSession == null) {
+                    val sessionReady = openControlSession(config)
+                    if (!sessionReady) {
+                        return
+                    }
+                }
+                startReceiver(config, surface)
+            }
+            StreamState.Status.Error -> {
+                val sessionReady = openControlSession(config)
+                if (!sessionReady) {
+                    return
+                }
+                startReceiver(config, surface)
+            }
         }
     }
 
     fun clearRenderSurface() {
         renderSurface = null
+        val wasRunning = streamReceiver.isRunning()
         streamReceiver.stop()
+        if (mutableState.value.streamState.status == StreamState.Status.Streaming && wasRunning) {
+            return
+        }
         stopControlSession()
     }
 
