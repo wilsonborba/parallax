@@ -8,6 +8,7 @@ data class QrEndpoint(
     val host: String,
     val controlPort: Int,
     val streamPort: Int?,
+    val accessPin: String?,
 )
 
 object QrParser {
@@ -27,10 +28,12 @@ object QrParser {
         }
         val queryParams = parseQueryParams(uri.query)
         val streamPort = queryParams["streamPort"]?.toIntOrNull()?.takeIf { it > 0 }
+        val accessPin = queryParams["pin"]?.takeIf { it.isNotBlank() }
         return QrEndpoint(
             host = host,
             controlPort = port,
             streamPort = streamPort,
+            accessPin = accessPin,
         )
     }
 

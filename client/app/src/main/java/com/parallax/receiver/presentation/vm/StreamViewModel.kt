@@ -74,6 +74,7 @@ class StreamViewModel(
         setStreamEndpoint.setHost(endpoint.host)
         setStreamEndpoint.setControlPort(endpoint.controlPort)
         endpoint.streamPort?.let { setStreamEndpoint.setStreamPort(it) }
+        endpoint.accessPin?.let { setStreamEndpoint.setAccessPin(it) }
         _uiEvents.tryEmit(StreamUiEvent.ShowMessage(buildQrSuccessMessage(endpoint)))
     }
 
@@ -117,7 +118,12 @@ class StreamViewModel(
             } else {
                 "Control ${endpoint.controlPort}, stream ${endpoint.streamPort}."
             }
-            return "QR scanned. Host set to ${endpoint.host}. $portSuffix"
+            val pinSuffix = if (endpoint.accessPin == null) {
+                ""
+            } else {
+                " PIN set."
+            }
+            return "QR scanned. Host set to ${endpoint.host}. $portSuffix$pinSuffix"
         }
     }
 }
