@@ -277,6 +277,7 @@ private fun ConnectionSettings(
     var streamPortText by remember(streamPort) { mutableStateOf(streamPort.toString()) }
     var controlPortText by remember(controlPort) { mutableStateOf(controlPort.toString()) }
     var accessPinText by remember(accessPin) { mutableStateOf(accessPin) }
+    var advancedVisible by remember { mutableStateOf(false) }
     val streamPortValue = streamPortText.toIntOrNull()
     val controlPortValue = controlPortText.toIntOrNull()
     Column(verticalArrangement = Arrangement.spacedBy(spacing.small)) {
@@ -285,16 +286,10 @@ private fun ConnectionSettings(
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onBackground,
         )
-        OutlinedTextField(
-            value = hostText,
-            onValueChange = { value ->
-                hostText = value
-                onHostChanged(value)
-            },
-            label = { Text("Sender IP / host") },
-            singleLine = true,
-            enabled = enabled,
-            modifier = Modifier.fillMaxWidth(),
+        Text(
+            text = "Step 1: Scan the QR code shown on the host.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -307,29 +302,10 @@ private fun ConnectionSettings(
                 Text("Scan QR")
             }
         }
-        OutlinedTextField(
-            value = streamPortText,
-            onValueChange = { value ->
-                streamPortText = value
-                value.toIntOrNull()?.let(onStreamPortChanged)
-            },
-            label = { Text("Stream port") },
-            singleLine = true,
-            enabled = enabled,
-            isError = streamPortValue == null,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = controlPortText,
-            onValueChange = { value ->
-                controlPortText = value
-                value.toIntOrNull()?.let(onControlPortChanged)
-            },
-            label = { Text("Control port") },
-            singleLine = true,
-            enabled = enabled,
-            isError = controlPortValue == null,
-            modifier = Modifier.fillMaxWidth(),
+        Text(
+            text = "Step 2: Enter the PIN shown on the host.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         OutlinedTextField(
             value = accessPinText,
@@ -342,19 +318,73 @@ private fun ConnectionSettings(
             enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
         )
-        if (streamPortValue == null) {
-            Text(
-                text = "Stream port must be a number.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
+        Text(
+            text = "Step 3: Start the stream.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = "Sender: $host • Control: $controlPort • Stream: $streamPort",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedButton(
+            onClick = { advancedVisible = !advancedVisible },
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (advancedVisible) "Hide advanced settings" else "Show advanced settings")
         }
-        if (controlPortValue == null) {
-            Text(
-                text = "Control port must be a number.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
+        if (advancedVisible) {
+            OutlinedTextField(
+                value = hostText,
+                onValueChange = { value ->
+                    hostText = value
+                    onHostChanged(value)
+                },
+                label = { Text("Sender IP / host") },
+                singleLine = true,
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth(),
             )
+            OutlinedTextField(
+                value = streamPortText,
+                onValueChange = { value ->
+                    streamPortText = value
+                    value.toIntOrNull()?.let(onStreamPortChanged)
+                },
+                label = { Text("Stream port (client receiver)") },
+                singleLine = true,
+                enabled = enabled,
+                isError = streamPortValue == null,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = controlPortText,
+                onValueChange = { value ->
+                    controlPortText = value
+                    value.toIntOrNull()?.let(onControlPortChanged)
+                },
+                label = { Text("Control port (host)") },
+                singleLine = true,
+                enabled = enabled,
+                isError = controlPortValue == null,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (streamPortValue == null) {
+                Text(
+                    text = "Stream port must be a number.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            if (controlPortValue == null) {
+                Text(
+                    text = "Control port must be a number.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         }
     }
 }
@@ -446,7 +476,7 @@ private fun QrScannerSheet(
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
-                text = "Align the QR code within the frame to autofill the host, control port, and any available stream port.",
+                text = "Align the QR code within the frame to autofill the host, control port, and any available stream port or PIN.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
