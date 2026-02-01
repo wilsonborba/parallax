@@ -51,6 +51,7 @@ class StreamSessionService(
     private var renderSurface: Surface? = null
     private var pendingStartConfig: StreamConfig? = null
     private var controlSession: ControlClient.ControlSession? = null
+    private var resumeOnSurfaceAvailable: Boolean = false
 
     val uiState: StateFlow<UiState> = mutableState.asStateFlow()
 
@@ -109,6 +110,27 @@ class StreamSessionService(
             return
         }
         val config = pendingStartConfig ?: mutableState.value.config
+        if (resumeOnSurfaceAvailable) {
+            resumeOnSurfaceAvailable = false
+            if (controlSession == null) {
+                val sessionReady = openControlSession(config)
+                if (!sessionReady) {
+                    return
+                }
+            }
+            startReceiver(config, surface)
+            pendingStartConfig = null
+            mutableState.update { current ->
+                if (current.streamState.status == StreamState.Status.Connecting ||
+                    current.streamState.status == StreamState.Status.Streaming
+                ) {
+                    current.copy(streamState = StreamState(StreamState.Status.Streaming))
+                } else {
+                    current
+                }
+            }
+            return
+        }
         when (mutableState.value.streamState.status) {
             StreamState.Status.Idle -> Unit
             StreamState.Status.Connecting -> {
@@ -149,9 +171,12 @@ class StreamSessionService(
 
     fun clearRenderSurface() {
         renderSurface = null
-        val wasRunning = streamReceiver.isRunning()
+        val currentStatus = mutableState.value.streamState.status
+        val shouldResumeOnSurface = currentStatus == StreamState.Status.Streaming ||
+            currentStatus == StreamState.Status.Connecting
+        resumeOnSurfaceAvailable = shouldResumeOnSurface
         streamReceiver.stop()
-        if (mutableState.value.streamState.status == StreamState.Status.Streaming && wasRunning) {
+        if (shouldResumeOnSurface) {
             return
         }
         stopControlSession()
