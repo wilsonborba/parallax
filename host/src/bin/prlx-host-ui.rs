@@ -161,6 +161,7 @@ struct HostUiApp {
     last_warning: Option<String>,
     qr_texture: Option<TextureHandle>,
     qr_payload: Option<String>,
+    show_qr_overlay: bool,
     shutdown_rx: Receiver<()>,
     shutdown_initiated: bool,
     dark_mode: bool,
@@ -184,6 +185,7 @@ impl HostUiApp {
             last_warning: None,
             qr_texture: None,
             qr_payload: None,
+            show_qr_overlay: false,
             shutdown_rx,
             shutdown_initiated: false,
             dark_mode: false,
@@ -494,6 +496,14 @@ impl eframe::App for HostUiApp {
                             });
                         });
 
+                        let view_larger = ui.add_enabled(
+                            self.qr_texture.is_some(),
+                            secondary_button("View larger", &palette),
+                        );
+                        if view_larger.clicked() {
+                            self.show_qr_overlay = true;
+                        }
+
                         ui.add_space(SECTION_GAP);
                         ui.label(
                             RichText::new(
@@ -507,6 +517,70 @@ impl eframe::App for HostUiApp {
 
                 ui.add_space(OUTER_MARGIN);
             });
+
+        if self.show_qr_overlay && self.qr_texture.is_none() {
+            self.show_qr_overlay = false;
+        }
+
+        if self.show_qr_overlay {
+            let screen_rect = ctx.screen_rect();
+
+            egui::Area::new("qr_overlay_backdrop")
+                .order(egui::Order::Foreground)
+                .fixed_pos(screen_rect.min)
+                .show(ctx, |ui| {
+                    ui.set_min_size(screen_rect.size());
+                    let (rect, response) =
+                        ui.allocate_exact_size(screen_rect.size(), egui::Sense::click());
+                    ui.painter()
+                        .rect_filled(rect, 0.0, Color32::from_black_alpha(160));
+                    if response.clicked() {
+                        self.show_qr_overlay = false;
+                    }
+                });
+
+            egui::Area::new("qr_overlay_content")
+                .order(egui::Order::Foreground)
+                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                .show(ctx, |ui| {
+                    let frame = egui::Frame::none()
+                        .fill(palette.card)
+                        .rounding(egui::Rounding::same(18.0))
+                        .stroke(Stroke::new(1.0, palette.card_border))
+                        .inner_margin(egui::Margin::same(20.0));
+
+                    frame.show(ui, |ui| {
+                        ui.vertical_centered(|ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    RichText::new("QR Code")
+                                        .size(16.0)
+                                        .strong()
+                                        .color(palette.text),
+                                );
+                                let close_button = egui::Button::new(
+                                    RichText::new("✕").size(14.0).color(palette.text),
+                                )
+                                .fill(palette.qr_bg)
+                                .min_size(egui::vec2(32.0, 32.0));
+                                if ui.add(close_button).clicked() {
+                                    self.show_qr_overlay = false;
+                                }
+                            });
+                            ui.add_space(12.0);
+                            if let Some(texture) = &self.qr_texture {
+                                let mut size = texture.size_vec2();
+                                let max_side = (screen_rect.width().min(screen_rect.height()) * 0.6)
+                                    .min(420.0);
+                                let scale =
+                                    (max_side / size.x).min(max_side / size.y).min(1.0);
+                                size *= scale;
+                                ui.image((texture.id(), size));
+                            }
+                        });
+                    });
+                });
+        }
 
         ctx.request_repaint_after(Duration::from_millis(200));
     }
