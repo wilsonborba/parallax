@@ -442,8 +442,8 @@ impl eframe::App for HostUiApp {
                             if let Some(texture) = &self.qr_texture {
                                 let mut size = texture.size_vec2();
                                 let max_side =
-                                    (screen_rect.width().min(screen_rect.height()) * 0.6)
-                                        .min(420.0);
+                                    (screen_rect.width().min(screen_rect.height()) * 0.85)
+                                        .min(560.0);
                                 let scale =
                                     (max_side / size.x).min(max_side / size.y).min(1.0);
                                 size *= scale;
