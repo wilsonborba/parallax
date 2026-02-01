@@ -525,7 +525,7 @@ impl eframe::App for HostUiApp {
         if self.show_qr_overlay {
             let screen_rect = ctx.screen_rect();
 
-            egui::Area::new("qr_overlay_backdrop")
+            egui::Area::new("qr_overlay_backdrop".into())
                 .order(egui::Order::Foreground)
                 .fixed_pos(screen_rect.min)
                 .show(ctx, |ui| {
@@ -539,7 +539,7 @@ impl eframe::App for HostUiApp {
                     }
                 });
 
-            egui::Area::new("qr_overlay_content")
+            egui::Area::new("qr_overlay_content".into())
                 .order(egui::Order::Foreground)
                 .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
                 .show(ctx, |ui| {
