@@ -23,11 +23,21 @@ class ControlClient(
         socket.tcpNoDelay = true
         socket.soTimeout = readTimeoutMillis
         socket.connect(InetSocketAddress(host, port), connectTimeoutMillis)
+        logger.info(
+            TAG,
+            "Control socket connected",
+            mapOf("host" to host, "port" to port, "streamPort" to streamPort),
+        )
         val session = ControlSession(socket, pairingToken, streamPort, logger)
         return try {
             session.performHandshake()
             session
         } catch (e: Exception) {
+            logger.error(
+                TAG,
+                "Control handshake failed",
+                mapOf("host" to host, "port" to port, "streamPort" to streamPort, "error" to e.message),
+            )
             socket.close()
             throw e
         }
@@ -67,9 +77,15 @@ class ControlClient(
         }
 
         internal fun performHandshake() {
+            logger.info(TAG, "Control handshake start", mapOf("streamPort" to streamPort))
             writeFrame(MessageType.Hello, ByteArray(0))
             val helloAck = readFrame()
             if (helloAck.messageType != MessageType.HelloAck) {
+                logger.error(
+                    TAG,
+                    "Unexpected hello ack",
+                    mapOf("messageType" to helloAck.messageType.name),
+                )
                 throw IllegalStateException("Expected hello ack, got ${helloAck.messageType}")
             }
 
@@ -82,19 +98,23 @@ class ControlClient(
             val pairingResponse = readFrame()
             when (pairingResponse.messageType) {
                 MessageType.AuthChallenge -> {
+                    logger.info(TAG, "Received auth challenge", mapOf("nonceLen" to pairingResponse.payload.size))
                     val nonce = pairingResponse.payload
                     val sessionKey = ControlClient.deriveSessionKey(pairingToken, nonce)
                     val hmac = ControlClient.hmacSha256(sessionKey, nonce)
                     writeFrame(MessageType.AuthResponse, hmac)
                     val authResponse = readFrame()
                     when (authResponse.messageType) {
-                        MessageType.PairAccept -> Unit
+                        MessageType.PairAccept -> logger.info(TAG, "Pairing accepted")
                         MessageType.PairReject -> throw IllegalStateException("Pairing rejected")
                         MessageType.Error -> throw IllegalStateException(authResponse.payload.decodeToString())
                         else -> throw IllegalStateException("Unexpected auth response: ${authResponse.messageType}")
                     }
                 }
-                MessageType.PairReject -> throw IllegalStateException("Pairing rejected")
+                MessageType.PairReject -> {
+                    logger.warn(TAG, "Pairing rejected before auth")
+                    throw IllegalStateException("Pairing rejected")
+                }
                 MessageType.Error -> throw IllegalStateException(pairingResponse.payload.decodeToString())
                 else -> throw IllegalStateException("Unexpected pairing response: ${pairingResponse.messageType}")
             }
@@ -131,6 +151,7 @@ class ControlClient(
     }
 
     private companion object {
+        private const val TAG = "ControlClient"
         private const val PROTOCOL_VERSION: Byte = 1
         private const val HEADER_LEN = 4
         private const val MAX_PAYLOAD_LEN = 0xFFFF
