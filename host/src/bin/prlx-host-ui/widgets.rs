@@ -51,6 +51,13 @@ pub(crate) fn secondary_button<'a>(label: &'a str, palette: &'a UiPalette) -> eg
         .min_size(egui::vec2(110.0, 38.0))
 }
 
+pub(crate) fn accent_button<'a>(label: &'a str, palette: &'a UiPalette) -> egui::Button<'a> {
+    egui::Button::new(RichText::new(label).size(14.0).color(Color32::WHITE))
+        .fill(palette.accent)
+        .stroke(Stroke::new(1.0, palette.accent))
+        .min_size(egui::vec2(140.0, 38.0))
+}
+
 pub(crate) fn ghost_button<'a>(label: &'a str, palette: &'a UiPalette) -> egui::Button<'a> {
     egui::Button::new(RichText::new(label).size(14.0).color(palette.text))
         .stroke(Stroke::new(1.0, palette.card_border))
