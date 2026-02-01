@@ -250,9 +250,23 @@ class StreamSessionService(
 
     private companion object {
         private const val TAG = "StreamSessionService"
+        private const val DEFAULT_PAIRING_TOKEN = "parallax"
     }
 
     private fun resolvePairingToken(config: StreamConfig): String {
-        return config.pairingToken.ifBlank { config.accessPin }
+        val accessPin = config.accessPin
+        val pairingToken = config.pairingToken
+        val shouldUseAccessPin = accessPin.isNotBlank() && (pairingToken.isBlank() || pairingToken == DEFAULT_PAIRING_TOKEN)
+        val resolved = if (shouldUseAccessPin) accessPin else pairingToken
+        logger.info(
+            TAG,
+            "Resolved pairing token",
+            mapOf(
+                "usingAccessPin" to shouldUseAccessPin,
+                "pairingTokenBlank" to pairingToken.isBlank(),
+                "accessPinBlank" to accessPin.isBlank(),
+            ),
+        )
+        return resolved
     }
 }
