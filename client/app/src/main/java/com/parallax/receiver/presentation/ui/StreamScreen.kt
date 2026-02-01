@@ -425,7 +425,7 @@ private fun QrScannerSheet(
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
-                text = "Align the QR code within the frame to autofill the host and control port.",
+                text = "Align the QR code within the frame to autofill the host, control port, and any available stream port.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
