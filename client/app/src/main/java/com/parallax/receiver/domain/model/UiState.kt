@@ -5,4 +5,5 @@ data class UiState(
     val streamState: StreamState,
     val pairingToken: String,
     val controlPort: Int,
+    val videoDimensions: VideoDimensions? = null,
 )

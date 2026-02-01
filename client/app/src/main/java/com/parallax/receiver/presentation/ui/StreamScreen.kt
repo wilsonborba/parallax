@@ -71,6 +71,7 @@ import com.parallax.receiver.core.config.SCALE_MAX
 import com.parallax.receiver.core.config.SCALE_MIN
 import com.parallax.receiver.domain.model.StreamState
 import com.parallax.receiver.domain.model.UiState
+import com.parallax.receiver.domain.model.VideoDimensions
 import com.parallax.receiver.presentation.theme.spacing
 import com.parallax.receiver.presentation.vm.StreamUiEvent
 import java.util.concurrent.Executors
@@ -118,7 +119,9 @@ fun StreamScreen(
             tonalElevation = 0.dp,
         ) {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                val aspectRatio = DEFAULT_REMOTE_WIDTH.toFloat() / DEFAULT_REMOTE_HEIGHT.toFloat()
+                val videoDimensions = uiState.videoDimensions
+                    ?: VideoDimensions(DEFAULT_REMOTE_WIDTH, DEFAULT_REMOTE_HEIGHT)
+                val aspectRatio = videoDimensions.width.toFloat() / videoDimensions.height.toFloat()
                 var baseWidth = maxWidth
                 var baseHeight = maxWidth / aspectRatio
                 if (baseHeight > maxHeight) {

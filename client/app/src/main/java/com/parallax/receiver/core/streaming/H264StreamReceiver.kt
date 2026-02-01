@@ -7,6 +7,7 @@ import com.parallax.receiver.core.config.DEFAULT_REMOTE_HEIGHT
 import com.parallax.receiver.core.config.DEFAULT_REMOTE_WIDTH
 import com.parallax.receiver.core.logging.Logger
 import com.parallax.receiver.core.logging.LoggerProvider
+import com.parallax.receiver.domain.model.VideoDimensions
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.nio.ByteBuffer
@@ -28,6 +29,12 @@ class H264StreamReceiver(
     private var receiveJob: Job? = null
     private var socket: DatagramSocket? = null
     private var codec: MediaCodec? = null
+    private var onVideoDimensionsDetected: ((VideoDimensions) -> Unit)? = null
+    private var lastDetectedDimensions: VideoDimensions? = null
+
+    fun setOnVideoDimensionsDetected(callback: (VideoDimensions) -> Unit) {
+        onVideoDimensionsDetected = callback
+    }
 
     fun start(
         port: Int,
@@ -90,6 +97,10 @@ class H264StreamReceiver(
                     }
                     if (mediaCodec == null && (pendingConfig != null || pendingFrame != null)) {
                         val dimensions = pendingConfig?.let { parseDimensionsFromConfig(it) }
+                        if (dimensions != null && dimensions != lastDetectedDimensions) {
+                            lastDetectedDimensions = dimensions
+                            onVideoDimensionsDetected?.invoke(dimensions)
+                        }
                         val resolvedWidth = dimensions?.width ?: width
                         val resolvedHeight = dimensions?.height ?: height
                         val decoder = MediaCodec.createDecoderByType(MIME_TYPE)
@@ -188,6 +199,7 @@ class H264StreamReceiver(
         codec?.stop()
         codec?.release()
         codec = null
+        lastDetectedDimensions = null
     }
 
     fun isRunning(): Boolean = receiveJob?.isActive == true
@@ -321,8 +333,6 @@ class H264StreamReceiver(
             return PacketHeader(flags, streamId, frameId, packetId, packetCount, payloadType, payloadLength)
         }
     }
-
-    private data class VideoDimensions(val width: Int, val height: Int)
 
     private fun parseDimensionsFromConfig(config: ByteArray): VideoDimensions? {
         val sps = extractNalUnit(config, NAL_TYPE_SPS) ?: return null

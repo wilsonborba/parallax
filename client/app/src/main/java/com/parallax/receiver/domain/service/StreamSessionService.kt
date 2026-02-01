@@ -55,6 +55,18 @@ class StreamSessionService(
 
     val uiState: StateFlow<UiState> = mutableState.asStateFlow()
 
+    init {
+        streamReceiver.setOnVideoDimensionsDetected { dimensions ->
+            mutableState.update { current ->
+                if (current.videoDimensions == dimensions) {
+                    current
+                } else {
+                    current.copy(videoDimensions = dimensions)
+                }
+            }
+        }
+    }
+
     fun startStream(config: StreamConfig) {
         connectionJob?.cancel()
         pendingStartConfig = config
@@ -72,6 +84,7 @@ class StreamSessionService(
             streamState = StreamState(StreamState.Status.Connecting),
             pairingToken = config.pairingToken,
             controlPort = config.controlPort,
+            videoDimensions = null,
         )
         connectionJob = coroutineScope.launch {
             delay(connectionDelayMillis)
@@ -100,7 +113,10 @@ class StreamSessionService(
         stopControlSession()
         pendingStartConfig = null
         mutableState.update { current ->
-            current.copy(streamState = StreamState(StreamState.Status.Idle))
+            current.copy(
+                streamState = StreamState(StreamState.Status.Idle),
+                videoDimensions = null,
+            )
         }
     }
 
