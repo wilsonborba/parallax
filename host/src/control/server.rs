@@ -90,7 +90,7 @@ impl StreamCoordinator for StreamController {
             .map_err(|_| "stream lock poisoned".to_string())?;
 
         if state.handle.is_some() {
-            return Err("stream already running".to_string());
+            return Ok(());
         }
 
         let target = {
