@@ -432,7 +432,7 @@ impl eframe::App for HostUiApp {
                                         .color(palette.text),
                                 );
                                 let close_button = egui::Button::new(
-                                    RichText::new("✕").size(14.0).color(palette.text),
+                                    RichText::new("X").size(14.0).color(palette.text),
                                 )
                                 .fill(palette.qr_bg)
                                 .min_size(egui::vec2(32.0, 32.0));
