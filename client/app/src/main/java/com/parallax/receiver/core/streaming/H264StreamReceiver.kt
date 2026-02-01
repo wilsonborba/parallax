@@ -387,10 +387,10 @@ class H264StreamReceiver(
             reader.readUnsignedExpGolomb()
             reader.readUnsignedExpGolomb()
             reader.readBit()
-            if (reader.readBit()) {
+            if (reader.readBit() == 1) {
                 val scalingListCount = if (chromaFormatIdc == 3) 12 else 8
                 repeat(scalingListCount) {
-                    if (reader.readBit()) {
+                    if (reader.readBit() == 1) {
                         skipScalingList(reader, if (it < 6) 16 else 64)
                     }
                 }
