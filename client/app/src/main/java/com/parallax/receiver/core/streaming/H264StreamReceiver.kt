@@ -66,17 +66,6 @@ class H264StreamReceiver(
                     )
                     throw e
                 }
-                val decoder = MediaCodec.createDecoderByType(MIME_TYPE)
-                mediaCodec = decoder
-                val format = MediaFormat.createVideoFormat(MIME_TYPE, width, height)
-                decoder.configure(format, surface, null, 0)
-                decoder.start()
-                codec = decoder
-                logger.info(
-                    TAG,
-                    "Decoder initialized",
-                    mapOf("mimeType" to MIME_TYPE, "width" to width, "height" to height),
-                )
                 while (isActive) {
                     if (pendingFrame == null) {
                         socket?.receive(packet)
@@ -99,8 +88,25 @@ class H264StreamReceiver(
                         }
                         pendingFrame = framePayload
                     }
+                    if (mediaCodec == null && (pendingConfig != null || pendingFrame != null)) {
+                        val dimensions = pendingConfig?.let { parseDimensionsFromConfig(it) }
+                        val resolvedWidth = dimensions?.width ?: width
+                        val resolvedHeight = dimensions?.height ?: height
+                        val decoder = MediaCodec.createDecoderByType(MIME_TYPE)
+                        mediaCodec = decoder
+                        val format = MediaFormat.createVideoFormat(MIME_TYPE, resolvedWidth, resolvedHeight)
+                        decoder.configure(format, surface, null, 0)
+                        decoder.start()
+                        codec = decoder
+                        logger.info(
+                            TAG,
+                            "Decoder initialized",
+                            mapOf("mimeType" to MIME_TYPE, "width" to resolvedWidth, "height" to resolvedHeight),
+                        )
+                    }
                     val frameToSend = pendingFrame
-                    if (frameToSend != null) {
+                    val decoder = mediaCodec
+                    if (frameToSend != null && decoder != null) {
                         val inputIndex = decoder.dequeueInputBuffer(TIMEOUT_US)
                         if (inputIndex >= 0) {
                             val inputBuffer = decoder.getInputBuffer(inputIndex)
@@ -132,15 +138,17 @@ class H264StreamReceiver(
                             }
                         }
                     }
-                    var outputIndex = decoder.dequeueOutputBuffer(bufferInfo, OUTPUT_TIMEOUT_US)
-                    while (outputIndex >= 0) {
-                        decoder.releaseOutputBuffer(outputIndex, true)
-                        frameCount += 1
-                        if (!loggedFirstFrame) {
-                            logger.info(TAG, "First frame decoded", emptyMap())
-                            loggedFirstFrame = true
+                    if (decoder != null) {
+                        var outputIndex = decoder.dequeueOutputBuffer(bufferInfo, OUTPUT_TIMEOUT_US)
+                        while (outputIndex >= 0) {
+                            decoder.releaseOutputBuffer(outputIndex, true)
+                            frameCount += 1
+                            if (!loggedFirstFrame) {
+                                logger.info(TAG, "First frame decoded", emptyMap())
+                                loggedFirstFrame = true
+                            }
+                            outputIndex = decoder.dequeueOutputBuffer(bufferInfo, OUTPUT_TIMEOUT_US)
                         }
-                        outputIndex = decoder.dequeueOutputBuffer(bufferInfo, OUTPUT_TIMEOUT_US)
                     }
                     val nowMs = System.currentTimeMillis()
                     if (nowMs - lastLogMs >= PACKET_LOG_INTERVAL_MS) {
@@ -311,6 +319,213 @@ class H264StreamReceiver(
                 return null
             }
             return PacketHeader(flags, streamId, frameId, packetId, packetCount, payloadType, payloadLength)
+        }
+    }
+
+    private data class VideoDimensions(val width: Int, val height: Int)
+
+    private fun parseDimensionsFromConfig(config: ByteArray): VideoDimensions? {
+        val sps = extractNalUnit(config, NAL_TYPE_SPS) ?: return null
+        return parseSpsDimensions(sps)
+    }
+
+    private fun extractNalUnit(data: ByteArray, targetNalType: Int): ByteArray? {
+        var i = 0
+        while (i + 3 < data.size) {
+            val startCodeLength = when {
+                data[i] == 0.toByte() && data[i + 1] == 0.toByte() && data[i + 2] == 1.toByte() -> 3
+                i + 4 < data.size && data[i] == 0.toByte() && data[i + 1] == 0.toByte() &&
+                    data[i + 2] == 0.toByte() && data[i + 3] == 1.toByte() -> 4
+                else -> 0
+            }
+            if (startCodeLength == 0) {
+                i += 1
+                continue
+            }
+            val nalStart = i + startCodeLength
+            var nalEnd = nalStart
+            while (nalEnd + 3 < data.size && !isStartCode(data, nalEnd)) {
+                nalEnd += 1
+            }
+            if (nalEnd >= data.size) {
+                nalEnd = data.size
+            }
+            val nalType = data[nalStart].toInt() and 0x1F
+            if (nalType == targetNalType) {
+                return data.copyOfRange(nalStart, nalEnd)
+            }
+            i = nalEnd
+        }
+        return null
+    }
+
+    private fun isStartCode(data: ByteArray, index: Int): Boolean {
+        return (data[index] == 0.toByte() && data[index + 1] == 0.toByte() &&
+            data[index + 2] == 1.toByte()) ||
+            (index + 3 < data.size && data[index] == 0.toByte() && data[index + 1] == 0.toByte() &&
+                data[index + 2] == 0.toByte() && data[index + 3] == 1.toByte())
+    }
+
+    private fun parseSpsDimensions(nalUnit: ByteArray): VideoDimensions? {
+        if (nalUnit.isEmpty()) return null
+        val rbsp = removeEmulationPreventionBytes(nalUnit.copyOfRange(1, nalUnit.size))
+        val reader = BitReader(rbsp)
+        val profileIdc = reader.readBits(8)
+        reader.readBits(8)
+        reader.readBits(8)
+        reader.readUnsignedExpGolomb()
+        var chromaFormatIdc = 1
+        if (profileIdc == 100 || profileIdc == 110 || profileIdc == 122 ||
+            profileIdc == 244 || profileIdc == 44 || profileIdc == 83 ||
+            profileIdc == 86 || profileIdc == 118 || profileIdc == 128 ||
+            profileIdc == 138 || profileIdc == 144
+        ) {
+            chromaFormatIdc = reader.readUnsignedExpGolomb()
+            if (chromaFormatIdc == 3) {
+                reader.readBit()
+            }
+            reader.readUnsignedExpGolomb()
+            reader.readUnsignedExpGolomb()
+            reader.readBit()
+            if (reader.readBit()) {
+                val scalingListCount = if (chromaFormatIdc == 3) 12 else 8
+                repeat(scalingListCount) {
+                    if (reader.readBit()) {
+                        skipScalingList(reader, if (it < 6) 16 else 64)
+                    }
+                }
+            }
+        }
+        reader.readUnsignedExpGolomb()
+        when (reader.readUnsignedExpGolomb()) {
+            0 -> reader.readUnsignedExpGolomb()
+            1 -> {
+                reader.readBit()
+                reader.readSignedExpGolomb()
+                reader.readSignedExpGolomb()
+                val cycle = reader.readUnsignedExpGolomb()
+                repeat(cycle) { reader.readSignedExpGolomb() }
+            }
+        }
+        reader.readUnsignedExpGolomb()
+        reader.readBit()
+        val picWidthInMbsMinus1 = reader.readUnsignedExpGolomb()
+        val picHeightInMapUnitsMinus1 = reader.readUnsignedExpGolomb()
+        val frameMbsOnlyFlag = reader.readBit() == 1
+        if (!frameMbsOnlyFlag) {
+            reader.readBit()
+        }
+        reader.readBit()
+        val frameCroppingFlag = reader.readBit() == 1
+        var frameCropLeft = 0
+        var frameCropRight = 0
+        var frameCropTop = 0
+        var frameCropBottom = 0
+        if (frameCroppingFlag) {
+            frameCropLeft = reader.readUnsignedExpGolomb()
+            frameCropRight = reader.readUnsignedExpGolomb()
+            frameCropTop = reader.readUnsignedExpGolomb()
+            frameCropBottom = reader.readUnsignedExpGolomb()
+        }
+        var width = (picWidthInMbsMinus1 + 1) * 16
+        var height = (picHeightInMapUnitsMinus1 + 1) * 16
+        if (!frameMbsOnlyFlag) {
+            height *= 2
+        }
+        val cropUnitX = when (chromaFormatIdc) {
+            0 -> 1
+            3 -> 1
+            else -> 2
+        }
+        val cropUnitY = when (chromaFormatIdc) {
+            0 -> 2 - if (frameMbsOnlyFlag) 1 else 0
+            3 -> 2 - if (frameMbsOnlyFlag) 1 else 0
+            else -> 2 * (2 - if (frameMbsOnlyFlag) 1 else 0)
+        }
+        if (frameCroppingFlag) {
+            width -= (frameCropLeft + frameCropRight) * cropUnitX
+            height -= (frameCropTop + frameCropBottom) * cropUnitY
+        }
+        if (width <= 0 || height <= 0) return null
+        return VideoDimensions(width, height)
+    }
+
+    private fun removeEmulationPreventionBytes(data: ByteArray): ByteArray {
+        val output = ArrayList<Byte>(data.size)
+        var i = 0
+        while (i < data.size) {
+            if (i + 2 < data.size && data[i] == 0.toByte() && data[i + 1] == 0.toByte() && data[i + 2] == 3.toByte()) {
+                output.add(0)
+                output.add(0)
+                i += 3
+            } else {
+                output.add(data[i])
+                i += 1
+            }
+        }
+        return output.toByteArray()
+    }
+
+    private fun skipScalingList(reader: BitReader, size: Int) {
+        var lastScale = 8
+        var nextScale = 8
+        for (i in 0 until size) {
+            if (nextScale != 0) {
+                val deltaScale = reader.readSignedExpGolomb()
+                nextScale = (lastScale + deltaScale + 256) % 256
+            }
+            lastScale = if (nextScale == 0) lastScale else nextScale
+        }
+    }
+
+    private class BitReader(private val data: ByteArray) {
+        private var byteOffset = 0
+        private var bitOffset = 0
+
+        fun readBit(): Int = readBits(1)
+
+        fun readBits(count: Int): Int {
+            var remaining = count
+            var value = 0
+            while (remaining > 0) {
+                if (byteOffset >= data.size) {
+                    return value
+                }
+                val currentByte = data[byteOffset].toInt() and 0xFF
+                val bitsLeft = 8 - bitOffset
+                val bitsToRead = minOf(remaining, bitsLeft)
+                val shift = bitsLeft - bitsToRead
+                val mask = (0xFF shr (8 - bitsToRead)) shl shift
+                value = (value shl bitsToRead) or ((currentByte and mask) shr shift)
+                bitOffset += bitsToRead
+                if (bitOffset == 8) {
+                    bitOffset = 0
+                    byteOffset += 1
+                }
+                remaining -= bitsToRead
+            }
+            return value
+        }
+
+        fun readUnsignedExpGolomb(): Int {
+            var zeros = 0
+            while (readBit() == 0 && byteOffset < data.size) {
+                zeros += 1
+            }
+            if (zeros == 0) {
+                return 0
+            }
+            val info = readBits(zeros)
+            return (1 shl zeros) - 1 + info
+        }
+
+        fun readSignedExpGolomb(): Int {
+            val value = readUnsignedExpGolomb()
+            return if (value % 2 == 0) {
+                -(value / 2)
+            } else {
+                (value + 1) / 2
+            }
         }
     }
 
