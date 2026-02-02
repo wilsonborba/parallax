@@ -1,4 +1,3 @@
-use std::cmp;
 use std::ffi::CString;
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -67,8 +66,8 @@ pub fn init(config: X11CaptureConfig) -> Result<X11Capture, String> {
     let screen_width = unsafe { xlib::XDisplayWidth(display, screen) } as u32;
     let screen_height = unsafe { xlib::XDisplayHeight(display, screen) } as u32;
 
-    let width = cmp::min(1920, screen_width);
-    let height = cmp::min(1080, screen_height);
+    let width = screen_width;
+    let height = screen_height;
 
     let mut capture = X11Capture {
         display,
