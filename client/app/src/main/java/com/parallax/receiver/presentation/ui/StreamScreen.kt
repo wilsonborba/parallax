@@ -32,7 +32,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -693,7 +693,7 @@ private fun ControlsToggle(
         ),
     ) {
         Icon(
-            imageVector = Icons.Default.Tune,
+            imageVector = Icons.Default.Settings,
             contentDescription = if (expanded) "Hide controls" else "Show controls",
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
