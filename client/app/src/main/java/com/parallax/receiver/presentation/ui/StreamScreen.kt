@@ -15,6 +15,7 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -30,6 +31,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -136,6 +139,7 @@ fun StreamScreen(
                     VideoArea(
                         baseWidth = baseWidth,
                         baseHeight = baseHeight,
+                        videoDimensions = videoDimensions,
                         scale = uiState.config.scale,
                         onSurfaceAvailable = onSurfaceAvailable,
                         onSurfaceDestroyed = onSurfaceDestroyed,
@@ -218,9 +222,9 @@ private fun ControlsPanel(
     Surface(
         modifier = modifier,
         shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
-        tonalElevation = 2.dp,
-        shadowElevation = 6.dp,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
+        tonalElevation = 4.dp,
+        shadowElevation = 14.dp,
     ) {
         Column(
             modifier = Modifier
@@ -243,13 +247,16 @@ private fun ControlsPanel(
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
-                FilledTonalButton(onClick = onClose) {
+                FilledTonalButton(
+                    onClick = onClose,
+                    modifier = Modifier.defaultMinSize(minHeight = 44.dp),
+                ) {
                     Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = null,
+                        imageVector = Icons.Default.KeyboardArrowDown,
+                        contentDescription = "Hide controls",
                     )
-                    Spacer(modifier = Modifier.width(spacing.small))
-                    Text("Hide controls")
+                    Spacer(modifier = Modifier.width(spacing.extraSmall))
+                    Text("Hide")
                 }
             }
             ConnectionSettings(
@@ -675,25 +682,23 @@ private fun ControlsToggle(
 ) {
     Surface(
         modifier = modifier
-            .clip(MaterialTheme.shapes.extraLarge)
             .clickable(onClick = onToggle),
         shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
         tonalElevation = 1.dp,
-        shadowElevation = 4.dp,
+        shadowElevation = 6.dp,
+        border = BorderStroke(
+            0.5.dp,
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
+        ),
     ) {
-        Text(
-            text = if (expanded) "Hide" else "Controls",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurface,
+        Icon(
+            imageVector = Icons.Default.Tune,
+            contentDescription = if (expanded) "Hide controls" else "Show controls",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
-                .border(
-                    width = 0.5.dp,
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
-                    shape = MaterialTheme.shapes.extraLarge,
-                )
-                .defaultMinSize(minHeight = 48.dp)
-                .padding(horizontal = 18.dp, vertical = 12.dp),
+                .defaultMinSize(minWidth = 40.dp, minHeight = 40.dp)
+                .padding(8.dp),
         )
     }
 }
@@ -702,6 +707,7 @@ private fun ControlsToggle(
 fun VideoArea(
     baseWidth: Dp,
     baseHeight: Dp,
+    videoDimensions: VideoDimensions,
     scale: Float,
     onSurfaceAvailable: (Surface) -> Unit,
     onSurfaceDestroyed: () -> Unit,
@@ -749,7 +755,11 @@ fun VideoArea(
                                 }
                             },
                         )
+                        holder.setFixedSize(videoDimensions.width, videoDimensions.height)
                     }
+                },
+                update = { view ->
+                    view.holder.setFixedSize(videoDimensions.width, videoDimensions.height)
                 },
                 modifier = Modifier.fillMaxSize(),
             )
