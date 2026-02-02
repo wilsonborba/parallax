@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -683,21 +684,21 @@ private fun ControlsToggle(
         modifier = modifier
             .clickable(onClick = onToggle),
         shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-        tonalElevation = 2.dp,
-        shadowElevation = 10.dp,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+        tonalElevation = 1.dp,
+        shadowElevation = 6.dp,
         border = BorderStroke(
             0.5.dp,
-            MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
         ),
     ) {
-        Text(
-            text = if (expanded) "Hide" else "Controls",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurface,
+        Icon(
+            imageVector = Icons.Default.Tune,
+            contentDescription = if (expanded) "Hide controls" else "Show controls",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
-                .defaultMinSize(minHeight = 48.dp)
-                .padding(horizontal = 20.dp, vertical = 12.dp),
+                .defaultMinSize(minWidth = 40.dp, minHeight = 40.dp)
+                .padding(8.dp),
         )
     }
 }
