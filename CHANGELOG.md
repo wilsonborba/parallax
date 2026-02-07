@@ -11,6 +11,7 @@
 - *(ui)* Improved the design of the ui
 - *(ui)* Improved the design of the ui 2
 - *(ui)* Adjusted the size of the qr code
+- *(landing_page)* Created a flutter project web for landing page
 
 ### 🐛 Bug Fixes
 
