@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../domain/entities/landing_data.dart';
 import '../viewmodels/landing_view_model.dart';
@@ -132,12 +133,12 @@ class HeroSection extends StatelessWidget {
               Row(
                 children: [
                   TextButton(
-                    onPressed: () => _showToast(context, 'Docs coming soon.'),
+                    onPressed: () => _openGithub(context),
                     child: const Text('Docs'),
                   ),
                   const SizedBox(width: 12),
                   TextButton(
-                    onPressed: () => _showToast(context, 'GitHub link coming soon.'),
+                    onPressed: () => _openGithub(context),
                     child: const Text('GitHub'),
                   ),
                 ],
@@ -190,11 +191,11 @@ class HeroSection extends StatelessWidget {
                   children: [
                     NeonButton(
                       label: data.primaryCta,
-                      onPressed: () => _showToast(context, 'Getting started soon.'),
+                      onPressed: () => _openGithub(context),
                     ),
                     NeonButton(
                       label: data.secondaryCta,
-                      onPressed: () => _showToast(context, 'GitHub link coming soon.'),
+                      onPressed: () => _openGithub(context),
                       isPrimary: false,
                     ),
                   ],
@@ -423,7 +424,7 @@ class FeaturesSection extends StatelessWidget {
                       (item) => SizedBox(
                         width: width / crossAxisCount - 20,
                         child: GlowCard(
-                          onTap: () => _showToast(context, '${item.title} selected.'),
+                          onTap: () => _openGithub(context),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -754,7 +755,7 @@ class RoadmapSection extends StatelessWidget {
                   (item) => SizedBox(
                     width: 320,
                     child: GlowCard(
-                      onTap: () => _showToast(context, '${item.title} roadmap item.'),
+                      onTap: () => _openGithub(context),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -804,7 +805,7 @@ class CommunitySection extends StatelessWidget {
                 .map(
                   (item) => ActionChip(
                     label: Text(item),
-                    onPressed: () => _showToast(context, '$item selected.'),
+                    onPressed: () => _openGithub(context),
                     backgroundColor: Colors.white10,
                     labelStyle: const TextStyle(color: Colors.white70),
                   ),
@@ -851,12 +852,12 @@ class FinalCtaSection extends StatelessWidget {
               children: [
                 NeonButton(
                   label: data.primaryCta,
-                  onPressed: () => _showToast(context, 'Get started soon.'),
+                  onPressed: () => _openGithub(context),
                 ),
                 NeonButton(
                   label: data.secondaryCta,
                   isPrimary: false,
-                  onPressed: () => _showToast(context, 'GitHub link coming soon.'),
+                  onPressed: () => _openGithub(context),
                 ),
               ],
             ),
@@ -1091,6 +1092,19 @@ class _SectionContainer extends StatelessWidget {
 void _copyCommand(BuildContext context, String value) {
   Clipboard.setData(ClipboardData(text: value));
   _showToast(context, 'Command copied to clipboard.');
+}
+
+const _githubUrl = 'https://github.com/wilsonborba/parallax';
+
+Future<void> _openGithub(BuildContext context) async {
+  final uri = Uri.parse(_githubUrl);
+  final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+  if (!context.mounted) {
+    return;
+  }
+  if (!launched) {
+    _showToast(context, 'Unable to open GitHub link.');
+  }
 }
 
 void _showToast(BuildContext context, String message) {
