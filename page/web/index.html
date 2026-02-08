@@ -1,38 +1,397 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
+<!doctype html>
+<html lang="en">
+    <head>
+        <base href="$FLUTTER_BASE_HREF" />
 
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
+        <meta charset="UTF-8" />
+        <meta content="IE=Edge" http-equiv="X-UA-Compatible" />
 
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+        <!-- Primary SEO -->
+        <title>Parallax — Stream your Linux desktop into VR</title>
+        <meta
+            name="description"
+            content="Parallax is an open-source, experimental remote-rendering pipeline to stream a Linux desktop into VR with ultra-low latency. Early development v0.1."
+        />
+        <meta
+            name="keywords"
+            content="Parallax, VR streaming, Linux, X11, H.264, UDP, Rust, Android, Jetpack Compose, spatial computing"
+        />
+        <meta name="theme-color" content="#0B0B10" />
 
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
-  <base href="$FLUTTER_BASE_HREF">
+        <!-- Open Graph -->
+        <meta
+            property="og:title"
+            content="Parallax — Stream your Linux desktop into VR"
+        />
+        <meta
+            property="og:description"
+            content="Open-source. Experimental. Built for the future of spatial computing. Early development (v0.1)."
+        />
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content="Parallax" />
+        <!-- Optional: add these if you create them -->
+        <!-- <meta property="og:image" content="assets/og/parallax-og.png" /> -->
+        <!-- <meta property="og:url" content="https://YOUR_DOMAIN_HERE/" /> -->
 
-  <meta charset="UTF-8">
-  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+        <!-- Twitter -->
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta
+            name="twitter:title"
+            content="Parallax — Stream your Linux desktop into VR"
+        />
+        <meta
+            name="twitter:description"
+            content="Open-source remote-rendering pipeline: X11 capture → H.264 → UDP → Android VR client. Early development (v0.1)."
+        />
+        <!-- Optional -->
+        <!-- <meta name="twitter:image" content="assets/og/parallax-og.png" /> -->
 
-  <!-- iOS meta tags & icons -->
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="page">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+        <!-- iOS / PWA -->
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta
+            name="apple-mobile-web-app-status-bar-style"
+            content="black-translucent"
+        />
+        <meta name="apple-mobile-web-app-title" content="Parallax" />
+        <link rel="apple-touch-icon" href="icons/Icon-192.png" />
+        <link rel="manifest" href="manifest.json" />
+        <link rel="icon" type="image/png" href="favicon.png" />
 
-  <!-- Favicon -->
-  <link rel="icon" type="image/png" href="favicon.png"/>
+        <!-- Preconnect to fonts (optional, safe to remove) -->
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+            rel="stylesheet"
+        />
 
-  <title>page</title>
-  <link rel="manifest" href="manifest.json">
-</head>
-<body>
-  <script src="flutter_bootstrap.js" async></script>
-</body>
+        <!-- Minimal Apple-ish base + neon purple ambience for the loading shell
+       (Flutter will render the full landing page UI after boot) -->
+        <style>
+            :root {
+                --bg: #07070b;
+                --bg2: #0b0b14;
+                --fg: rgba(255, 255, 255, 0.92);
+                --muted: rgba(255, 255, 255, 0.62);
+                --purple: #b026ff; /* neon purple */
+                --purple2: #6d28ff; /* deeper accent */
+                --stroke: rgba(255, 255, 255, 0.1);
+                --shadow: 0 20px 80px rgba(0, 0, 0, 0.55);
+            }
+
+            html,
+            body {
+                height: 100%;
+                width: 100%;
+                margin: 0;
+                background:
+                    radial-gradient(
+                        1200px 700px at 20% 10%,
+                        rgba(176, 38, 255, 0.35),
+                        transparent 55%
+                    ),
+                    radial-gradient(
+                        900px 600px at 80% 30%,
+                        rgba(109, 40, 255, 0.25),
+                        transparent 60%
+                    ),
+                    linear-gradient(180deg, var(--bg), var(--bg2));
+                color: var(--fg);
+                font-family:
+                    Inter,
+                    ui-sans-serif,
+                    system-ui,
+                    -apple-system,
+                    Segoe UI,
+                    Roboto,
+                    Helvetica,
+                    Arial,
+                    "Apple Color Emoji",
+                    "Segoe UI Emoji";
+                overflow: hidden; /* avoid scroll during bootstrap */
+            }
+
+            /* Flutter mounts into body; keep a nice boot/loading experience */
+            #boot {
+                position: fixed;
+                inset: 0;
+                display: grid;
+                place-items: center;
+                padding: 24px;
+                pointer-events: none;
+            }
+
+            .boot-card {
+                width: min(980px, 94vw);
+                border-radius: 24px;
+                background: rgba(0, 0, 0, 0.35);
+                border: 1px solid var(--stroke);
+                box-shadow: var(--shadow);
+                overflow: hidden;
+                position: relative;
+                backdrop-filter: blur(16px);
+                -webkit-backdrop-filter: blur(16px);
+            }
+
+            .boot-ambient {
+                position: absolute;
+                inset: -1px;
+                background:
+                    radial-gradient(
+                        700px 220px at 30% 10%,
+                        rgba(176, 38, 255, 0.55),
+                        transparent 60%
+                    ),
+                    radial-gradient(
+                        550px 240px at 80% 20%,
+                        rgba(109, 40, 255, 0.35),
+                        transparent 55%
+                    ),
+                    linear-gradient(
+                        120deg,
+                        rgba(176, 38, 255, 0.12),
+                        rgba(0, 0, 0, 0)
+                    );
+                filter: blur(0px);
+                opacity: 0.9;
+                animation: drift 10s ease-in-out infinite;
+            }
+
+            @keyframes drift {
+                0%,
+                100% {
+                    transform: translate3d(0, 0, 0) scale(1);
+                }
+                50% {
+                    transform: translate3d(0, -8px, 0) scale(1.02);
+                }
+            }
+
+            .boot-inner {
+                position: relative;
+                padding: 42px 40px 34px;
+                display: grid;
+                gap: 18px;
+            }
+
+            .brand {
+                display: flex;
+                align-items: center;
+                gap: 14px;
+            }
+
+            .mark {
+                width: 44px;
+                height: 44px;
+                border-radius: 14px;
+                background:
+                    radial-gradient(
+                        circle at 30% 30%,
+                        rgba(255, 255, 255, 0.18),
+                        transparent 45%
+                    ),
+                    linear-gradient(
+                        135deg,
+                        rgba(176, 38, 255, 0.95),
+                        rgba(109, 40, 255, 0.55)
+                    );
+                box-shadow:
+                    0 0 0 1px rgba(255, 255, 255, 0.1),
+                    0 18px 70px rgba(176, 38, 255, 0.3);
+                position: relative;
+                overflow: hidden;
+            }
+            .mark::after {
+                content: "";
+                position: absolute;
+                inset: -40%;
+                background: conic-gradient(
+                    from 220deg,
+                    transparent 0 40%,
+                    rgba(255, 255, 255, 0.25) 55%,
+                    transparent 70% 100%
+                );
+                animation: spin 2.8s linear infinite;
+                opacity: 0.9;
+            }
+            @keyframes spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+
+            .title {
+                line-height: 1.05;
+            }
+            .title h1 {
+                margin: 0;
+                font-size: clamp(22px, 3vw, 34px);
+                letter-spacing: -0.02em;
+                font-weight: 800;
+            }
+            .title p {
+                margin: 6px 0 0;
+                color: var(--muted);
+                font-size: 14px;
+                letter-spacing: -0.01em;
+            }
+
+            .status {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                color: rgba(255, 255, 255, 0.8);
+                font-size: 13px;
+            }
+            .dot {
+                width: 9px;
+                height: 9px;
+                border-radius: 50%;
+                background: var(--purple);
+                box-shadow: 0 0 18px rgba(176, 38, 255, 0.85);
+                animation: pulse 1.6s ease-in-out infinite;
+            }
+            @keyframes pulse {
+                0%,
+                100% {
+                    transform: scale(1);
+                    opacity: 0.9;
+                }
+                50% {
+                    transform: scale(1.25);
+                    opacity: 1;
+                }
+            }
+
+            .bar {
+                height: 2px;
+                background: rgba(255, 255, 255, 0.08);
+                border-radius: 999px;
+                overflow: hidden;
+                position: relative;
+            }
+            .bar::before {
+                content: "";
+                position: absolute;
+                inset: 0;
+                width: 45%;
+                background: linear-gradient(
+                    90deg,
+                    rgba(176, 38, 255, 0),
+                    rgba(176, 38, 255, 0.85),
+                    rgba(109, 40, 255, 0)
+                );
+                transform: translateX(-60%);
+                animation: load 1.4s ease-in-out infinite;
+                filter: drop-shadow(0 0 10px rgba(176, 38, 255, 0.5));
+            }
+            @keyframes load {
+                0% {
+                    transform: translateX(-70%);
+                }
+                100% {
+                    transform: translateX(240%);
+                }
+            }
+
+            .hint {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 12px;
+                margin-top: 6px;
+                color: rgba(255, 255, 255, 0.55);
+                font-size: 12px;
+            }
+
+            /* Hide boot screen once Flutter paints */
+            .hidden {
+                opacity: 0;
+                transition: opacity 0.35s ease;
+            }
+
+            /* Respect reduced motion */
+            @media (prefers-reduced-motion: reduce) {
+                * {
+                    animation: none !important;
+                    transition: none !important;
+                }
+            }
+        </style>
+    </head>
+
+    <body>
+        <!-- Premium loading shell while Flutter initializes -->
+        <div id="boot" aria-hidden="true">
+            <div class="boot-card">
+                <div class="boot-ambient"></div>
+                <div class="boot-inner">
+                    <div class="brand">
+                        <div class="mark"></div>
+                        <div class="title">
+                            <h1>Parallax</h1>
+                            <p>
+                                Stream your Linux desktop into VR with ultra-low
+                                latency.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="status">
+                        <span class="dot"></span>
+                        <span
+                            >Open-source • Experimental • Early development
+                            (v0.1)</span
+                        >
+                    </div>
+
+                    <div
+                        class="bar"
+                        role="progressbar"
+                        aria-label="Loading"
+                    ></div>
+
+                    <div class="hint">
+                        <span>Initializing Flutter Web…</span>
+                        <span>UDP • TCP Control • H.264</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Flutter bootstrap -->
+        <script src="flutter_bootstrap.js" async></script>
+
+        <script>
+            // Fade out boot screen once Flutter starts drawing frames.
+            // This is intentionally simple and safe; it won't break if Flutter changes.
+            (function () {
+                const boot = document.getElementById("boot");
+                let raf = 0;
+                let last = performance.now();
+                function tick(now) {
+                    // If the page is actively painting (Flutter canvas), assume boot is done soon.
+                    // We use a small timeout to avoid flicker on slow devices.
+                    if (now - last > 900) {
+                        boot.classList.add("hidden");
+                        setTimeout(() => {
+                            boot.remove();
+                        }, 600);
+                        return;
+                    }
+                    last = now;
+                    raf = requestAnimationFrame(tick);
+                }
+                // Start monitoring after a short delay so we don't instantly hide on first paint.
+                setTimeout(() => {
+                    raf = requestAnimationFrame(tick);
+                }, 600);
+
+                // If user navigates away quickly, clean up.
+                window.addEventListener("beforeunload", () => {
+                    if (raf) cancelAnimationFrame(raf);
+                });
+            })();
+        </script>
+    </body>
 </html>
