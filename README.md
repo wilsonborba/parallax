@@ -35,27 +35,87 @@ channel.
 - `proto/`: UDP packet format and wire protocol documentation.
 - `packaging/`: Systemd service unit(s) for the host daemon.
 
-## Debian one-command install
+## Debian install options (3 alternatives)
+
+### 1) One command (`curl | bash`) for Debian/Ubuntu
+
+From any directory:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/asodya/parallax/main/install.sh | bash
+```
+
+When you publish the website on Cloudflare Pages with Flutter's default build output, the installer is available at:
+
+```bash
+curl -fsSL https://parallax.asodya.com/assets/assets/install.sh | bash
+```
+
+Modes:
+
+```bash
+# default: source install (user-local launcher + desktop icon)
+curl -fsSL https://raw.githubusercontent.com/asodya/parallax/main/install.sh | bash
+
+# build and install a .deb package
+curl -fsSL https://raw.githubusercontent.com/asodya/parallax/main/install.sh | bash -s -- --mode deb
+
+# cargo-based install flow
+curl -fsSL https://raw.githubusercontent.com/asodya/parallax/main/install.sh | bash -s -- --mode cargo
+```
+
+### 2) Cargo-focused flow (from repo)
+
+```bash
+cargo install --path host
+./packaging/install-debian.sh
+```
+
+### 3) Clone repo and install
+
+```bash
+git clone https://github.com/asodya/parallax.git
+cd parallax
+./packaging/install-debian.sh
+```
+
+## Build a `.deb` package (Debian)
 
 From the repo root:
 
 ```bash
-./packaging/install-debian.sh
+./packaging/build-deb.sh
 ```
 
-What this installer does:
+This creates a package in `dist/`, for example:
 
-- Installs required system dependencies (via `apt-get`).
-- Installs Rust toolchain if missing (`rustup`).
-- Builds `prlx-hostd` and `prlx-host-ui` in release mode.
-- Installs a `parallax` command in `~/.local/bin`.
-- Installs a desktop launcher and icon in the user menu.
+```bash
+dist/parallax-host_0.1.0_amd64.deb
+```
+
+Install it with:
+
+```bash
+sudo apt install ./dist/parallax-host_0.1.0_amd64.deb
+```
+
+If dependencies are already installed, you can skip `apt` in the build step:
+
+```bash
+./packaging/build-deb.sh --skip-deps
+```
+
+To run package quality checks with `lintian` after building:
+
+```bash
+./packaging/build-deb.sh --lint
+```
 
 After install:
 
-- Run `parallax` to open the host UI.
-- The UI controls the daemon lifecycle with built-in Start/Stop actions.
-- Run `parallax host --help` to run the daemon directly.
+- `parallax` is available in `/usr/bin/parallax`.
+- The launcher appears in the desktop app menu as **Parallax Host**.
+- UI start/stop controls manage the host daemon lifecycle.
 
 ## Quick start
 
@@ -136,8 +196,8 @@ journalctl --user -u prlx-hostd.service
 
 ## Protocol documentation
 
-The UDP packet framing is documented in [`proto/README.md`](proto/README.md). It includes
-header layout, flags, payload types, and H.264 payload expectations.
+- UDP packet framing: [`proto/README.md`](proto/README.md)
+- TCP control channel: [`proto/CONTROL.md`](proto/CONTROL.md)
 
 ## Development notes
 

@@ -10,6 +10,7 @@ import com.parallax.receiver.domain.model.StreamState
 import com.parallax.receiver.domain.model.UiState
 import com.parallax.receiver.domain.service.StreamSessionService
 import com.parallax.receiver.domain.module.SetScaleUseCase
+import com.parallax.receiver.domain.module.SetViewModeUseCase
 import com.parallax.receiver.domain.module.SetStreamEndpointUseCase
 import com.parallax.receiver.domain.module.StartStreamUseCase
 import com.parallax.receiver.domain.module.StopStreamUseCase
@@ -24,6 +25,7 @@ class StreamViewModel(
     private val startStream: StartStreamUseCase,
     private val stopStream: StopStreamUseCase,
     private val setScale: SetScaleUseCase,
+    private val setViewMode: SetViewModeUseCase,
     private val setStreamEndpoint: SetStreamEndpointUseCase,
     private val logger: Logger = LoggerProvider.logger,
 ) : ViewModel() {
@@ -31,6 +33,7 @@ class StreamViewModel(
     private val _uiEvents = MutableSharedFlow<StreamUiEvent>(extraBufferCapacity = 1)
     val uiEvents: SharedFlow<StreamUiEvent> = _uiEvents.asSharedFlow()
     private var lastStatus: StreamState.Status? = null
+    private var lastTopologyStatus: String? = null
 
     init {
         observeStateTransitions()
@@ -46,6 +49,10 @@ class StreamViewModel(
 
     fun onScaleChanged(scale: Float) {
         setScale.invoke(scale)
+    }
+
+    fun onViewModeChanged(viewMode: String) {
+        setViewMode.invoke(viewMode)
     }
 
     fun onHostChanged(host: String) {
@@ -86,6 +93,30 @@ class StreamViewModel(
         streamSessionService.clearRenderSurface()
     }
 
+    fun onAddMonitorClicked() {
+        streamSessionService.requestAddMonitor()
+    }
+
+    fun onRemoveMonitorClicked(displayId: String) {
+        streamSessionService.requestRemoveMonitor(displayId)
+    }
+
+    fun onRefreshTopologyClicked() {
+        streamSessionService.refreshTopology()
+    }
+
+    fun onStartMonitorClicked(displayId: String) {
+        streamSessionService.requestStartMonitor(displayId)
+    }
+
+    fun onStopMonitorClicked(displayId: String) {
+        streamSessionService.requestStopMonitor(displayId)
+    }
+
+    fun onStatsOverlayVisibilityChanged(enabled: Boolean) {
+        streamSessionService.setStatsOverlayEnabled(enabled)
+    }
+
     private fun observeStateTransitions() {
         viewModelScope.launch {
             uiState.collect { state ->
@@ -104,6 +135,10 @@ class StreamViewModel(
                         ),
                     )
                     lastStatus = currentStatus
+                }
+                if (!state.topologyStatus.isNullOrBlank() && state.topologyStatus != lastTopologyStatus) {
+                    _uiEvents.tryEmit(StreamUiEvent.ShowMessage(state.topologyStatus))
+                    lastTopologyStatus = state.topologyStatus
                 }
             }
         }

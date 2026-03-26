@@ -6,8 +6,10 @@ class LocalLandingRepository implements LandingRepository {
   LandingData fetchLandingData() {
     return const LandingData(
       hero: HeroContent(
-        headline: 'Parallax — Stream your Linux desktop into VR with ultra-low latency.',
-        subHeadline: 'Open-source. Experimental. Built for the future of spatial computing.',
+        headline:
+            'Parallax — Stream your Linux desktop into VR with ultra-low latency.',
+        subHeadline:
+            'Open-source. Experimental. Built for the future of spatial computing.',
         primaryCta: 'Get Started',
         secondaryCta: 'View on GitHub',
         microText: 'Currently in early development (v0.1).',
@@ -32,12 +34,14 @@ class LocalLandingRepository implements LandingRepository {
           ArchitectureNode(
             title: 'Linux Host (Rust)',
             subtitle: 'prlx-hostd',
-            tooltip: 'Captures X11 frames, encodes H.264, and serves control sessions.',
+            tooltip:
+                'Captures X11 frames, encodes H.264, and serves control sessions.',
           ),
           ArchitectureNode(
             title: 'X11 Capture',
             subtitle: 'Display feed',
-            tooltip: 'Grabs Linux desktop frames directly from the X11 display server.',
+            tooltip:
+                'Grabs Linux desktop frames directly from the X11 display server.',
           ),
           ArchitectureNode(
             title: 'H.264 Encode',
@@ -73,8 +77,14 @@ class LocalLandingRepository implements LandingRepository {
           ),
         ],
         flows: [
-          DataFlow(label: 'TCP control (bi-directional)', direction: FlowDirection.biDirectional),
-          DataFlow(label: 'UDP video stream (host → client)', direction: FlowDirection.hostToClient),
+          DataFlow(
+            label: 'TCP control (bi-directional)',
+            direction: FlowDirection.biDirectional,
+          ),
+          DataFlow(
+            label: 'UDP video stream (host → client)',
+            direction: FlowDirection.hostToClient,
+          ),
         ],
       ),
       features: [
@@ -107,15 +117,18 @@ class LocalLandingRepository implements LandingRepository {
       steps: [
         StepItem(
           title: 'Capture the X11 display',
-          description: 'prlx-hostd grabs the Linux desktop frames directly from X11.',
+          description:
+              'prlx-hostd grabs the Linux desktop frames directly from X11.',
         ),
         StepItem(
           title: 'Encode with H.264',
-          description: 'Hardware VAAPI encoding or software fallback for portability.',
+          description:
+              'Hardware VAAPI encoding or software fallback for portability.',
         ),
         StepItem(
           title: 'Packetize via Parallax framing',
-          description: 'Frames split into UDP packets with stream/frame metadata.',
+          description:
+              'Frames split into UDP packets with stream/frame metadata.',
         ),
         StepItem(
           title: 'Coordinate over TCP',
@@ -123,30 +136,36 @@ class LocalLandingRepository implements LandingRepository {
         ),
         StepItem(
           title: 'Android client decodes',
-          description: 'Jetpack Compose client scans QR and renders the stream.',
+          description:
+              'Jetpack Compose client scans QR and renders the stream.',
         ),
       ],
       gettingStarted: [
         CodeSample(
-          title: 'Build the host daemon',
-          command: 'cd host\ncargo build --release',
-          caption: 'Compile the Rust-based prlx-hostd daemon.',
-        ),
-        CodeSample(
-          title: 'Run the host daemon',
+          title: 'One-command install (Debian/Ubuntu)',
           command:
-              './target/release/prlx-hostd \\\n  --display :0 \\\n  --bind 0.0.0.0:5000 \\\n  --target 127.0.0.1:5000 \\\n  --control-bind 0.0.0.0:0',
-          caption: 'Launch the host with defaults shown in --help.',
+              'curl -fsSL https://raw.githubusercontent.com/asodya/parallax/main/install.sh | bash',
+          caption:
+              'Installs dependencies, binaries, CLI command, and desktop launcher.',
         ),
         CodeSample(
-          title: 'Launch the host UI',
-          command: 'cargo run --release --bin prlx-host-ui',
-          caption: 'Show the pairing QR code and session status.',
+          title: 'Cloudflare Pages installer URL',
+          command:
+              'curl -fsSL https://parallax.asodya.com/assets/assets/install.sh | bash',
+          caption:
+              'Installer published as a Flutter web asset from page/assets/install.sh.',
         ),
         CodeSample(
-          title: 'Build the Android client',
-          command: 'cd client\n./gradlew :app:assembleDebug',
-          caption: 'Install the APK and scan the QR code to connect.',
+          title: 'Cargo install flow',
+          command: 'cargo install --path host\n./packaging/install-debian.sh',
+          caption: 'Alternative for users who prefer a cargo-based flow.',
+        ),
+        CodeSample(
+          title: 'Repository install flow',
+          command:
+              'git clone https://github.com/asodya/parallax.git\ncd parallax\n./packaging/install-debian.sh',
+          caption:
+              'Manual alternative for users who want full step-by-step control.',
         ),
       ],
       protocol: ProtocolContent(
@@ -175,7 +194,8 @@ class LocalLandingRepository implements LandingRepository {
         timeline: [
           RoadmapItem(
             title: 'Optimize latency',
-            description: 'Tighten capture → encode → transport pipeline timings.',
+            description:
+                'Tighten capture → encode → transport pipeline timings.',
           ),
           RoadmapItem(
             title: 'Improve hardware encoder support',
@@ -203,7 +223,8 @@ class LocalLandingRepository implements LandingRepository {
       ),
       finalCta: FinalCtaContent(
         headline: 'Build the future of VR streaming.',
-        subHeadline: 'Parallax is open-source and evolving — join the community.',
+        subHeadline:
+            'Parallax is open-source and evolving — join the community.',
         primaryCta: 'Get Started',
         secondaryCta: 'View on GitHub',
       ),

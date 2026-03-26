@@ -42,7 +42,7 @@ install_apt_packages() {
   )
 
   if ! need_cmd apt-get; then
-    fail "Este instalador foi feito para Debian/Ubuntu (apt-get não encontrado)."
+    fail "This installer targets Debian/Ubuntu (apt-get not found)."
   fi
 
   local sudo_cmd=""
@@ -50,11 +50,11 @@ install_apt_packages() {
     if need_cmd sudo; then
       sudo_cmd="sudo"
     else
-      fail "sudo não encontrado. Rode como root ou instale sudo."
+      fail "sudo not found. Run as root or install sudo."
     fi
   fi
 
-  say "Instalando dependências do sistema..."
+  say "Installing system dependencies..."
   $sudo_cmd apt-get update
   $sudo_cmd apt-get install -y "${pkgs[@]}"
 }
@@ -64,7 +64,7 @@ ensure_rust() {
     return
   fi
 
-  say "Rust não encontrado. Instalando rustup + toolchain estável..."
+  say "Rust not found. Installing rustup + stable toolchain..."
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 }
 
@@ -73,7 +73,7 @@ load_cargo_env() {
     # shellcheck disable=SC1090
     source "$HOME/.cargo/env"
   fi
-  need_cmd cargo || fail "cargo não encontrado após instalação do Rust."
+  need_cmd cargo || fail "cargo not found after Rust installation."
 }
 
 build_binaries() {
@@ -86,7 +86,7 @@ build_binaries() {
 }
 
 install_files() {
-  say "Instalando arquivos do usuário..."
+  say "Installing user files..."
   mkdir -p "$BIN_DIR" "$LOCAL_BIN" "$DESKTOP_DIR" "$ICON_DIR"
 
   install -m 0755 "$REPO_ROOT/host/target/release/prlx-hostd" "$BIN_DIR/prlx-hostd"
@@ -111,18 +111,18 @@ check_debian() {
       *debian*) return ;;
     esac
   fi
-  fail "Distribuição não suportada por este instalador (somente Debian-like)."
+  fail "Unsupported distribution for this installer (Debian-like only)."
 }
 
 print_success() {
-  say "Instalação concluída."
+  say "Installation complete."
   printf '\n'
-  printf 'Comando instalado: %s\n' "$LOCAL_BIN/parallax"
+  printf 'Installed command: %s\n' "$LOCAL_BIN/parallax"
   printf 'Desktop entry:    %s\n' "$DESKTOP_DIR/parallax.desktop"
-  printf 'Icone:            %s\n' "$ICON_DIR/parallax.svg"
+  printf 'Icon:             %s\n' "$ICON_DIR/parallax.svg"
   printf '\n'
-  printf 'Uso:\n'
-  printf '  parallax            # abre a UI\n'
+  printf 'Usage:\n'
+  printf '  parallax            # opens the UI\n'
   printf '  parallax host --help\n'
   printf '  parallax doctor\n'
   printf '\n'
@@ -130,9 +130,9 @@ print_success() {
   case ":$PATH:" in
     *":$LOCAL_BIN:"*) ;;
     *)
-      printf 'ATENCAO: %s nao esta no PATH atual.\n' "$LOCAL_BIN"
-      printf 'Adicione no ~/.bashrc ou ~/.zshrc:\n'
-      printf '  export PATH="$LOCAL_BIN:$PATH"\n'
+      printf 'WARNING: %s is not in the current PATH.\n' "$LOCAL_BIN"
+      printf 'Add this to ~/.bashrc or ~/.zshrc:\n'
+      printf '  export PATH="%s:$PATH"\n' "$LOCAL_BIN"
       ;;
   esac
 }

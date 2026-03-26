@@ -9,7 +9,6 @@ const MAX_MTU: usize = 1200;
 const MAX_PAYLOAD_SIZE: usize = MAX_MTU - HEADER_LENGTH as usize;
 const PAYLOAD_TYPE_VIDEO: u8 = 0x01;
 const RESERVED: u8 = 0;
-const STREAM_ID: u32 = 1;
 
 const FLAG_KEYFRAME: u16 = 1 << 0;
 const FLAG_CONFIG: u16 = 1 << 1;
@@ -61,7 +60,7 @@ impl UdpPacket {
     }
 }
 
-pub fn packetize_frame(encoded_frame: &EncodedFrame) -> Vec<UdpPacket> {
+pub fn packetize_frame(stream_id: u32, encoded_frame: &EncodedFrame) -> Vec<UdpPacket> {
     let frame_id = FRAME_COUNTER.fetch_add(1, Ordering::Relaxed);
     let mut flags = 0u16;
 
@@ -76,7 +75,7 @@ pub fn packetize_frame(encoded_frame: &EncodedFrame) -> Vec<UdpPacket> {
     if encoded_frame.data.is_empty() {
         let header = PacketHeader {
             flags: flags | FLAG_END_OF_FRAME,
-            stream_id: STREAM_ID,
+            stream_id,
             frame_id,
             packet_id: 0,
             packet_count: 1,
@@ -106,7 +105,7 @@ pub fn packetize_frame(encoded_frame: &EncodedFrame) -> Vec<UdpPacket> {
 
         let header = PacketHeader {
             flags: packet_flags,
-            stream_id: STREAM_ID,
+            stream_id,
             frame_id,
             packet_id,
             packet_count: total_packets,

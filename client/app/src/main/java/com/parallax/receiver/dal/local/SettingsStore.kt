@@ -5,6 +5,8 @@ import android.content.SharedPreferences
 interface SettingsStore {
     fun getScale(): Float
     fun setScale(scale: Float)
+    fun getViewMode(): String
+    fun setViewMode(viewMode: String)
     fun getHost(): String
     fun setHost(host: String)
     fun getStreamPort(): Int
@@ -15,6 +17,8 @@ interface SettingsStore {
     fun setAccessPin(accessPin: String)
     fun getPairingToken(): String
     fun setPairingToken(pairingToken: String)
+    fun getStatsOverlayEnabled(): Boolean
+    fun setStatsOverlayEnabled(enabled: Boolean)
 }
 
 class SharedPreferencesSettingsStore(
@@ -27,6 +31,16 @@ class SharedPreferencesSettingsStore(
     override fun setScale(scale: Float) {
         sharedPreferences.edit()
             .putFloat(KEY_SCALE, scale)
+            .apply()
+    }
+
+    override fun getViewMode(): String {
+        return sharedPreferences.getString(KEY_VIEW_MODE, DEFAULT_VIEW_MODE) ?: DEFAULT_VIEW_MODE
+    }
+
+    override fun setViewMode(viewMode: String) {
+        sharedPreferences.edit()
+            .putString(KEY_VIEW_MODE, viewMode)
             .apply()
     }
 
@@ -83,19 +97,33 @@ class SharedPreferencesSettingsStore(
             .apply()
     }
 
+    override fun getStatsOverlayEnabled(): Boolean {
+        return sharedPreferences.getBoolean(KEY_STATS_OVERLAY_ENABLED, DEFAULT_STATS_OVERLAY_ENABLED)
+    }
+
+    override fun setStatsOverlayEnabled(enabled: Boolean) {
+        sharedPreferences.edit()
+            .putBoolean(KEY_STATS_OVERLAY_ENABLED, enabled)
+            .apply()
+    }
+
     private companion object {
         private const val KEY_SCALE = "settings.scale"
         private const val DEFAULT_SCALE = 1.0f
+        private const val KEY_VIEW_MODE = "settings.view_mode"
+        private const val DEFAULT_VIEW_MODE = "fit"
         private const val KEY_HOST = "settings.host"
         private const val KEY_STREAM_PORT = "settings.stream_port"
         private const val KEY_CONTROL_PORT = "settings.control_port"
         private const val KEY_LEGACY_PORT = "settings.port"
         private const val KEY_ACCESS_PIN = "settings.access_pin"
         private const val KEY_PAIRING_TOKEN = "settings.pairing_token"
+        private const val KEY_STATS_OVERLAY_ENABLED = "settings.stats_overlay_enabled"
         private const val DEFAULT_HOST = "127.0.0.1"
         private const val DEFAULT_STREAM_PORT = 5000
         private const val DEFAULT_CONTROL_PORT = 7000
         private const val DEFAULT_ACCESS_PIN = "parallax"
         private const val DEFAULT_PAIRING_TOKEN = "parallax"
+        private const val DEFAULT_STATS_OVERLAY_ENABLED = false
     }
 }

@@ -15,4 +15,4 @@ if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database "$DESKTOP_DIR" >/dev/null 2>&1 || true
 fi
 
-echo "Parallax removido do usuario atual."
+echo "Parallax removed for the current user."

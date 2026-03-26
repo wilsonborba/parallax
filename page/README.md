@@ -1,16 +1,19 @@
-# page
+# Parallax Landing (Flutter Web)
 
-A new Flutter project.
+## Build locally
 
-## Getting Started
+```bash
+cd page
+flutter build web
+```
 
-This project is a starting point for a Flutter application.
+## Cloudflare Pages setup
 
-A few resources to get you started if this is your first Flutter project:
+Use these values in the Pages project:
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+- Build command: `cd page && flutter build web`
+- Build output directory: `page/build/web`
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+The installer script is shipped as a Flutter web asset:
+
+- `https://parallax.asodya.com/assets/assets/install.sh`

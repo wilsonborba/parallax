@@ -32,3 +32,4 @@
 - *(env)* Created the initial rust env for development
 - *(env)* Adjusted the initial rust env for development
 - *(deploy)* Implemented install process
+- *(deploy)* Implemented install process for .deb
