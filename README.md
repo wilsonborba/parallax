@@ -35,6 +35,28 @@ channel.
 - `proto/`: UDP packet format and wire protocol documentation.
 - `packaging/`: Systemd service unit(s) for the host daemon.
 
+## Debian one-command install
+
+From the repo root:
+
+```bash
+./packaging/install-debian.sh
+```
+
+What this installer does:
+
+- Installs required system dependencies (via `apt-get`).
+- Installs Rust toolchain if missing (`rustup`).
+- Builds `prlx-hostd` and `prlx-host-ui` in release mode.
+- Installs a `parallax` command in `~/.local/bin`.
+- Installs a desktop launcher and icon in the user menu.
+
+After install:
+
+- Run `parallax` to open the host UI.
+- The UI controls the daemon lifecycle with built-in Start/Stop actions.
+- Run `parallax host --help` to run the daemon directly.
+
 ## Quick start
 
 ### 1) Build the host daemon
