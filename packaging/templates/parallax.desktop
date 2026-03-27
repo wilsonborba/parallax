@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Parallax Host
+Comment=Parallax Linux host control panel
+Exec=parallax
+Icon=parallax
+Terminal=false
+Categories=Network;Utility;
+StartupNotify=true
+Keywords=streaming;vr;remote;parallax;

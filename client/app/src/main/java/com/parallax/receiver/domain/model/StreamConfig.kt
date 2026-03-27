@@ -5,6 +5,7 @@ data class StreamConfig(
     val streamPort: Int,
     val controlPort: Int,
     val scale: Float,
+    val viewMode: String,
     val accessPin: String,
     val pairingToken: String,
 )

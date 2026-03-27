@@ -3,6 +3,7 @@ package com.parallax.receiver.presentation.ui
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.view.MotionEvent
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -62,6 +64,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -72,6 +75,7 @@ import com.parallax.receiver.core.config.DEFAULT_REMOTE_HEIGHT
 import com.parallax.receiver.core.config.DEFAULT_REMOTE_WIDTH
 import com.parallax.receiver.core.config.SCALE_MAX
 import com.parallax.receiver.core.config.SCALE_MIN
+import com.parallax.receiver.domain.model.MonitorPanelState
 import com.parallax.receiver.domain.model.StreamState
 import com.parallax.receiver.domain.model.UiState
 import com.parallax.receiver.domain.model.VideoDimensions
@@ -81,6 +85,21 @@ import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.delay
+
+private enum class ViewScaleMode(val storedValue: String) {
+    Fit("fit"),
+    Fill("fill"),
+    Manual("manual");
+
+    companion object {
+        fun fromStored(value: String): ViewScaleMode = when (value.lowercase()) {
+            "fill" -> Fill
+            "manual" -> Manual
+            else -> Fit
+        }
+    }
+}
 
 @Composable
 fun StreamScreen(
@@ -89,6 +108,7 @@ fun StreamScreen(
     onStartClicked: () -> Unit,
     onStopClicked: () -> Unit,
     onScaleChanged: (Float) -> Unit,
+    onViewModeChanged: (String) -> Unit,
     onHostChanged: (String) -> Unit,
     onStreamPortChanged: (Int) -> Unit,
     onControlPortChanged: (Int) -> Unit,
@@ -96,11 +116,23 @@ fun StreamScreen(
     onQrPayloadScanned: (String) -> Unit,
     onSurfaceAvailable: (Surface) -> Unit,
     onSurfaceDestroyed: () -> Unit,
+    onAddMonitorClicked: () -> Unit,
+    onRemoveMonitorClicked: (String) -> Unit,
+    onRefreshTopologyClicked: () -> Unit,
+    onStartMonitorClicked: (String) -> Unit,
+    onStopMonitorClicked: (String) -> Unit,
+    onStatsOverlayVisibilityChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val spacing = MaterialTheme.spacing
     val status = uiState.streamState.status
     var controlsVisible by remember { mutableStateOf(false) }
+    var settingsHandleVisible by remember { mutableStateOf(false) }
+    var statusHandleVisible by remember { mutableStateOf(false) }
+    var statsEnabled by remember(uiState.statsOverlayEnabled) { mutableStateOf(uiState.statsOverlayEnabled) }
+    val scaleMode = remember(uiState.config.viewMode) {
+        ViewScaleMode.fromStored(uiState.config.viewMode)
+    }
     var autoFitApplied by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(uiEvents) {
@@ -113,6 +145,7 @@ fun StreamScreen(
     Scaffold(
         modifier = modifier.fillMaxSize(),
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { innerPadding ->
         Surface(
             modifier = Modifier
@@ -131,16 +164,37 @@ fun StreamScreen(
                     baseHeight = maxHeight
                     baseWidth = baseHeight * aspectRatio
                 }
+                val fillScale = maxOf(
+                    maxWidth.value / baseWidth.value.coerceAtLeast(1f),
+                    maxHeight.value / baseHeight.value.coerceAtLeast(1f),
+                )
+                val effectiveScale = when (scaleMode) {
+                    ViewScaleMode.Fit -> 1f
+                    ViewScaleMode.Fill -> fillScale
+                    ViewScaleMode.Manual -> uiState.config.scale
+                }
                 if (!autoFitApplied) {
                     onScaleChanged(1f)
                     autoFitApplied = true
+                }
+                LaunchedEffect(settingsHandleVisible, controlsVisible) {
+                    if (settingsHandleVisible && !controlsVisible) {
+                        delay(1800)
+                        settingsHandleVisible = false
+                    }
+                }
+                LaunchedEffect(statusHandleVisible) {
+                    if (statusHandleVisible) {
+                        delay(1800)
+                        statusHandleVisible = false
+                    }
                 }
                 Box(modifier = Modifier.fillMaxSize()) {
                     VideoArea(
                         baseWidth = baseWidth,
                         baseHeight = baseHeight,
                         videoDimensions = videoDimensions,
-                        scale = uiState.config.scale,
+                        scale = effectiveScale,
                         onSurfaceAvailable = onSurfaceAvailable,
                         onSurfaceDestroyed = onSurfaceDestroyed,
                         modifier = Modifier.fillMaxSize(),
@@ -151,10 +205,28 @@ fun StreamScreen(
                         modifier = Modifier
                             .align(Alignment.TopStart)
                             .padding(spacing.medium),
+                        visible = statsEnabled && statusHandleVisible && !controlsVisible,
+                    )
+                    CornerRevealArea(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(spacing.small),
+                        onReveal = { settingsHandleVisible = true },
+                    )
+                    CornerRevealArea(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(spacing.small),
+                        onReveal = {
+                            if (statsEnabled) {
+                                statusHandleVisible = true
+                            }
+                        },
                     )
                     ControlsToggle(
                         expanded = controlsVisible,
                         onToggle = { controlsVisible = !controlsVisible },
+                        visible = settingsHandleVisible || controlsVisible,
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .padding(spacing.medium),
@@ -164,19 +236,33 @@ fun StreamScreen(
                             uiState = uiState,
                             onStartClicked = onStartClicked,
                             onStopClicked = onStopClicked,
+                            scaleMode = scaleMode,
+                            onScaleModeChanged = { mode -> onViewModeChanged(mode.storedValue) },
                             onScaleChanged = onScaleChanged,
                             onHostChanged = onHostChanged,
                             onStreamPortChanged = onStreamPortChanged,
                             onControlPortChanged = onControlPortChanged,
                             onAccessPinChanged = onAccessPinChanged,
                             onQrPayloadScanned = onQrPayloadScanned,
+                            onAddMonitorClicked = onAddMonitorClicked,
+                            onRemoveMonitorClicked = onRemoveMonitorClicked,
+                            onRefreshTopologyClicked = onRefreshTopologyClicked,
+                            onStartMonitorClicked = onStartMonitorClicked,
+                            onStopMonitorClicked = onStopMonitorClicked,
+                            statsEnabled = statsEnabled,
+                            onStatsVisibilityChanged = { enabled ->
+                                statsEnabled = enabled
+                                onStatsOverlayVisibilityChanged(enabled)
+                                if (!enabled) {
+                                    statusHandleVisible = false
+                                }
+                            },
                             onClose = { controlsVisible = false },
                             status = status,
                             modifier = Modifier
-                                .align(Alignment.BottomEnd)
+                                .fillMaxSize()
                                 .padding(spacing.large)
-                                .widthIn(max = 360.dp)
-                                .fillMaxWidth(),
+                                .align(Alignment.Center),
                         )
                     }
                 }
@@ -190,12 +276,21 @@ private fun ControlsPanel(
     uiState: UiState,
     onStartClicked: () -> Unit,
     onStopClicked: () -> Unit,
+    scaleMode: ViewScaleMode,
+    onScaleModeChanged: (ViewScaleMode) -> Unit,
     onScaleChanged: (Float) -> Unit,
     onHostChanged: (String) -> Unit,
     onStreamPortChanged: (Int) -> Unit,
     onControlPortChanged: (Int) -> Unit,
     onAccessPinChanged: (String) -> Unit,
     onQrPayloadScanned: (String) -> Unit,
+    onAddMonitorClicked: () -> Unit,
+    onRemoveMonitorClicked: (String) -> Unit,
+    onRefreshTopologyClicked: () -> Unit,
+    onStartMonitorClicked: (String) -> Unit,
+    onStopMonitorClicked: (String) -> Unit,
+    statsEnabled: Boolean,
+    onStatsVisibilityChanged: (Boolean) -> Unit,
     onClose: () -> Unit,
     status: StreamState.Status,
     modifier: Modifier = Modifier,
@@ -283,8 +378,32 @@ private fun ControlsPanel(
                 onStartClicked = onStartClicked,
                 onStopClicked = onStopClicked,
             )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(spacing.small),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Stats overlay",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                OutlinedButton(onClick = { onStatsVisibilityChanged(!statsEnabled) }) {
+                    Text(if (statsEnabled) "On" else "Off")
+                }
+            }
+            MonitorControls(
+                monitorPanels = uiState.monitorPanels,
+                topologyBusy = uiState.topologyBusy,
+                onAddMonitorClicked = onAddMonitorClicked,
+                onRemoveMonitorClicked = onRemoveMonitorClicked,
+                onRefreshTopologyClicked = onRefreshTopologyClicked,
+                onStartMonitorClicked = onStartMonitorClicked,
+                onStopMonitorClicked = onStopMonitorClicked,
+            )
             ScaleControls(
                 scale = uiState.config.scale,
+                mode = scaleMode,
+                onModeChange = onScaleModeChanged,
                 onScaleChanged = onScaleChanged,
             )
         }
@@ -295,6 +414,90 @@ private fun ControlsPanel(
             onPayloadScanned = onQrPayloadScanned,
         )
     }
+}
+
+@Composable
+private fun MonitorControls(
+    monitorPanels: List<MonitorPanelState>,
+    topologyBusy: Boolean,
+    onAddMonitorClicked: () -> Unit,
+    onRemoveMonitorClicked: (String) -> Unit,
+    onRefreshTopologyClicked: () -> Unit,
+    onStartMonitorClicked: (String) -> Unit,
+    onStopMonitorClicked: (String) -> Unit,
+) {
+    val spacing = MaterialTheme.spacing
+    val canAdd = monitorPanels.size < 3 && !topologyBusy
+    Column(verticalArrangement = Arrangement.spacedBy(spacing.small)) {
+        Text(
+            text = "Virtual monitors",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(spacing.small)) {
+            FilledTonalButton(onClick = onAddMonitorClicked, enabled = canAdd) {
+                Text("+1 monitor")
+            }
+            OutlinedButton(onClick = onRefreshTopologyClicked, enabled = !topologyBusy) {
+                Text("Refresh")
+            }
+        }
+        if (monitorPanels.isEmpty()) {
+            Text(
+                text = "No virtual monitors configured.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            monitorPanels.forEach { panel ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = buildMonitorLine(panel),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(modifier = Modifier.width(spacing.small))
+                    OutlinedButton(
+                        onClick = {
+                            if (panel.running) onStopMonitorClicked(panel.displayId)
+                            else onStartMonitorClicked(panel.displayId)
+                        },
+                        enabled = !topologyBusy,
+                    ) {
+                        Text(if (panel.running) "Stop" else "Start")
+                    }
+                    Spacer(modifier = Modifier.width(spacing.small))
+                    OutlinedButton(
+                        onClick = { onRemoveMonitorClicked(panel.displayId) },
+                        enabled = !topologyBusy,
+                    ) {
+                        Text("-")
+                    }
+                }
+            }
+        }
+        if (topologyBusy) {
+            Text(
+                text = "Applying topology...",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+private fun buildMonitorLine(panel: MonitorPanelState): String {
+    val state = if (panel.running) "running" else "stopped"
+    val base = "${panel.displayId} • ${panel.width}x${panel.height} @ ${panel.x},${panel.y} • $state"
+    if (!panel.running) return base
+    val fps = String.format("%.2f", panel.fps)
+    val bitrate = panel.bitrateKbps
+    return "$base • ${fps}fps • ${bitrate}kbps"
 }
 
 @Composable
@@ -591,6 +794,8 @@ private fun StreamActions(
 @Composable
 private fun ScaleControls(
     scale: Float,
+    mode: ViewScaleMode,
+    onModeChange: (ViewScaleMode) -> Unit,
     onScaleChanged: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -599,6 +804,45 @@ private fun ScaleControls(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(spacing.small),
     ) {
+        Text(
+            text = "View mode",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(spacing.small),
+        ) {
+            OutlinedButton(
+                onClick = { onModeChange(ViewScaleMode.Fit) },
+                enabled = mode != ViewScaleMode.Fit,
+            ) {
+                Text("Fit")
+            }
+            OutlinedButton(
+                onClick = { onModeChange(ViewScaleMode.Fill) },
+                enabled = mode != ViewScaleMode.Fill,
+            ) {
+                Text("Fill")
+            }
+            OutlinedButton(
+                onClick = { onModeChange(ViewScaleMode.Manual) },
+                enabled = mode != ViewScaleMode.Manual,
+            ) {
+                Text("Manual")
+            }
+        }
+        if (mode != ViewScaleMode.Manual) {
+            Text(
+                text = if (mode == ViewScaleMode.Fit) {
+                    "Fit shows the full desktop without cropping."
+                } else {
+                    "Fill uses all available area and may crop edges."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            return
+        }
         Text(
             text = "Scale: ${String.format("%.2f", scale)}x",
             style = MaterialTheme.typography.titleMedium,
@@ -643,7 +887,9 @@ private fun StreamStatusBadge(
     status: StreamState.Status,
     message: String?,
     modifier: Modifier = Modifier,
+    visible: Boolean = true,
 ) {
+    if (!visible) return
     val label = when (status) {
         StreamState.Status.Idle -> "Idle"
         StreamState.Status.Connecting -> "Connecting"
@@ -678,8 +924,10 @@ private fun StreamStatusBadge(
 private fun ControlsToggle(
     expanded: Boolean,
     onToggle: () -> Unit,
+    visible: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    if (!visible) return
     Surface(
         modifier = modifier
             .clickable(onClick = onToggle),
@@ -704,6 +952,30 @@ private fun ControlsToggle(
 }
 
 @Composable
+private fun CornerRevealArea(
+    modifier: Modifier = Modifier,
+    onReveal: () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .width(56.dp)
+            .height(56.dp)
+            .pointerInteropFilter { event ->
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_HOVER_ENTER,
+                    MotionEvent.ACTION_HOVER_MOVE,
+                    MotionEvent.ACTION_DOWN -> {
+                        onReveal()
+                        false
+                    }
+
+                    else -> false
+                }
+            },
+    )
+}
+
+@Composable
 fun VideoArea(
     baseWidth: Dp,
     baseHeight: Dp,
@@ -723,14 +995,8 @@ fun VideoArea(
             modifier = Modifier
                 .width(baseWidth)
                 .height(baseHeight)
-                .graphicsLayer(scaleX = scale, scaleY = scale)
-                .border(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.outline,
-                    shape = MaterialTheme.shapes.medium,
-                ),
+                .graphicsLayer(scaleX = scale, scaleY = scale),
             color = MaterialTheme.colorScheme.surfaceVariant,
-            shape = MaterialTheme.shapes.medium,
             tonalElevation = 0.dp,
             shadowElevation = 0.dp,
         ) {

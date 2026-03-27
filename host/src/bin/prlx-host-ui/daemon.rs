@@ -210,6 +210,11 @@ impl DaemonClient {
                 }
             }
             Err(err) => {
+                if err.kind() == std::io::ErrorKind::ConnectionRefused && self.socket_path.exists()
+                {
+                    // A stale socket file can survive crashes; remove it so the daemon can re-bind.
+                    let _ = std::fs::remove_file(&self.socket_path);
+                }
                 self.ensure_daemon_spawn();
                 if err.kind() != std::io::ErrorKind::NotFound || self.socket_path.exists() {
                     if !self.warning_sent {
@@ -258,7 +263,15 @@ impl DaemonClient {
                 CHILD_PID.store(child.id() as i32, Ordering::Relaxed);
                 self.last_spawn_success = Some(Instant::now());
                 self.spawned_child = Some(child);
+            } else {
+                let _ = self.event_tx.send(DaemonEvent::Error(
+                    "Failed to start prlx-hostd from local install path".to_string(),
+                ));
             }
+        } else {
+            let _ = self.event_tx.send(DaemonEvent::Error(
+                "prlx-hostd binary not found in PATH or alongside prlx-host-ui".to_string(),
+            ));
         }
     }
 

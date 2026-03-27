@@ -11,6 +11,8 @@
 - *(ui)* Improved the design of the ui
 - *(ui)* Improved the design of the ui 2
 - *(ui)* Adjusted the size of the qr code
+- *(landing_page)* Created a flutter project web for landing page
+- *(landing_page)* Adjusted logos icon
 
 ### 🐛 Bug Fixes
 
@@ -29,3 +31,8 @@
 
 - *(env)* Created the initial rust env for development
 - *(env)* Adjusted the initial rust env for development
+- *(deploy)* Implemented install process
+- *(deploy)* Implemented install process for .deb
+- *(deploy)* Implemented install process for curl
+- *(deploy)* Implemented install process for curl to query on main
+- *(deploy)* Implemented install process for curl to query on main

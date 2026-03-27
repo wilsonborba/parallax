@@ -1,23 +1,26 @@
 use std::io::{BufRead, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU32, Ordering},
 };
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use std::{collections::BTreeMap};
 
 use crate::capture;
 use crate::control::protocol::{read_frame, write_frame};
 use crate::control::session::{DaemonState, DaemonStatus, Session, StreamCoordinator};
+use crate::display;
 use crate::encode;
 use crate::net;
 use crate::stream;
 
 const DEFAULT_SOCKET_PATH: &str = "~/.local/share/prlx/prlx.sock";
 const SOCKET_ENV_VAR: &str = "PRLX_SOCKET_PATH";
+const MAX_STREAMS: u32 = 3;
 
 #[derive(Debug, Clone)]
 pub struct StreamConfig {
@@ -35,11 +38,6 @@ pub struct ControlConfig {
 }
 
 #[derive(Debug)]
-struct StreamState {
-    handle: Option<StreamingHandle>,
-}
-
-#[derive(Debug)]
 struct StreamingHandle {
     stop: Arc<AtomicBool>,
     join: thread::JoinHandle<()>,
@@ -47,30 +45,74 @@ struct StreamingHandle {
 
 #[derive(Debug)]
 pub struct StreamController {
-    state: Mutex<StreamState>,
-    config: StreamConfig,
-    target: Mutex<Option<String>>,
+    slots: Mutex<BTreeMap<u32, StreamSlot>>,
+}
+
+#[derive(Debug, Clone)]
+struct StreamSlotMeta {
+    display: String,
+    bind_addr: String,
+    target_addr: String,
+    prefer_vaapi: bool,
+}
+
+#[derive(Debug)]
+struct StreamSlot {
+    meta: StreamSlotMeta,
+    target: Option<String>,
+    handle: Option<StreamingHandle>,
+    metrics: Arc<StreamMetrics>,
+}
+
+#[derive(Debug, Default)]
+struct StreamMetrics {
+    width: AtomicU32,
+    height: AtomicU32,
+    fps_x100: AtomicU32,
+    bitrate_kbps: AtomicU32,
 }
 
 impl StreamController {
     fn new(config: StreamConfig) -> Self {
+        let mut slots = BTreeMap::new();
+        for stream_id in 1..=MAX_STREAMS {
+            let derived = derive_stream_config(&config, stream_id);
+            slots.insert(
+                stream_id,
+                StreamSlot {
+                    meta: StreamSlotMeta {
+                        display: derived.display,
+                        bind_addr: derived.bind_addr,
+                        target_addr: derived.target_addr,
+                        prefer_vaapi: derived.prefer_vaapi,
+                    },
+                    target: None,
+                    handle: None,
+                    metrics: Arc::new(StreamMetrics::default()),
+                },
+            );
+        }
         Self {
-            state: Mutex::new(StreamState { handle: None }),
-            config,
-            target: Mutex::new(None),
+            slots: Mutex::new(slots),
         }
     }
 
     fn shutdown(&self) -> Result<(), String> {
-        let handle = {
-            let mut state = self
-                .state
+        let handles = {
+            let mut slots = self
+                .slots
                 .lock()
                 .map_err(|_| "stream lock poisoned".to_string())?;
-            state.handle.take()
+            let mut handles = Vec::new();
+            for slot in slots.values_mut() {
+                if let Some(handle) = slot.handle.take() {
+                    handles.push(handle);
+                }
+            }
+            handles
         };
 
-        if let Some(handle) = handle {
+        for handle in handles {
             handle.stop.store(true, Ordering::Relaxed);
             handle
                 .join
@@ -83,60 +125,59 @@ impl StreamController {
 }
 
 impl StreamCoordinator for StreamController {
-    fn start_stream(&self) -> Result<(), String> {
-        let mut state = self
-            .state
+    fn start_stream(&self, stream_id: u32) -> Result<(), String> {
+        let mut slots = self
+            .slots
             .lock()
             .map_err(|_| "stream lock poisoned".to_string())?;
+        let slot = slots
+            .get_mut(&stream_id)
+            .ok_or_else(|| "stream_id not found".to_string())?;
 
-        if state.handle.is_some() {
+        if slot.handle.is_some() {
             return Ok(());
         }
 
-        let target = {
-            let target = self
-                .target
-                .lock()
-                .map_err(|_| "target lock poisoned".to_string())?;
-            target.clone().or_else(|| {
-                if self.config.target_addr.trim().is_empty()
-                    || self.config.target_addr.ends_with(":0")
-                {
-                    None
-                } else {
-                    Some(self.config.target_addr.clone())
-                }
-            })
-        };
+        let target = slot
+            .target
+            .clone()
+            .or_else(|| normalize_target(slot.meta.target_addr.clone()));
         let Some(target_addr) = target else {
             return Err("no target configured; waiting for client".to_string());
         };
 
         let stop = Arc::new(AtomicBool::new(false));
         let thread_stop = Arc::clone(&stop);
-        let mut config = self.config.clone();
-        config.target_addr = target_addr;
+        let config = StreamConfig {
+            display: slot.meta.display.clone(),
+            bind_addr: slot.meta.bind_addr.clone(),
+            target_addr,
+            prefer_vaapi: slot.meta.prefer_vaapi,
+        };
+        slot.metrics.fps_x100.store(0, Ordering::Relaxed);
+        slot.metrics.bitrate_kbps.store(0, Ordering::Relaxed);
+        let metrics = Arc::clone(&slot.metrics);
 
         let join = thread::spawn(move || {
-            if let Err(err) = run_streaming(config, thread_stop) {
-                eprintln!("Streaming loop exited: {err}");
+            if let Err(err) = run_streaming(stream_id, config, thread_stop, metrics) {
+                eprintln!("Streaming loop exited for stream {stream_id}: {err}");
             }
         });
 
-        state.handle = Some(StreamingHandle { stop, join });
+        slot.handle = Some(StreamingHandle { stop, join });
         Ok(())
     }
 
-    fn stop_stream(&self) -> Result<(), String> {
+    fn stop_stream(&self, stream_id: u32) -> Result<(), String> {
         let handle = {
-            let mut state = self
-                .state
+            let mut slots = self
+                .slots
                 .lock()
                 .map_err(|_| "stream lock poisoned".to_string())?;
-            state
-                .handle
-                .take()
-                .ok_or("stream not running".to_string())?
+            let slot = slots
+                .get_mut(&stream_id)
+                .ok_or_else(|| "stream_id not found".to_string())?;
+            slot.handle.take().ok_or("stream not running".to_string())?
         };
 
         handle.stop.store(true, Ordering::Relaxed);
@@ -148,25 +189,181 @@ impl StreamCoordinator for StreamController {
     }
 
     fn set_target(&self, target: String) -> Result<(), String> {
+        let mut to_restart = Vec::new();
         {
-            let mut current = self
-                .target
+            let mut slots = self
+                .slots
                 .lock()
                 .map_err(|_| "target lock poisoned".to_string())?;
-            *current = Some(target);
+            for (&stream_id, slot) in slots.iter_mut() {
+                slot.target = Some(offset_port(&target, stream_id.saturating_sub(1)));
+                if slot.handle.is_some() {
+                    to_restart.push(stream_id);
+                }
+            }
         }
-        let should_restart = {
-            let state = self
-                .state
-                .lock()
-                .map_err(|_| "stream lock poisoned".to_string())?;
-            state.handle.is_some()
-        };
-        if should_restart {
-            self.stop_stream()?;
-            self.start_stream()?;
+        for stream_id in to_restart {
+            self.stop_stream(stream_id)?;
+            self.start_stream(stream_id)?;
         }
         Ok(())
+    }
+
+    fn list_streams(&self) -> Result<String, String> {
+        let slots = self
+            .slots
+            .lock()
+            .map_err(|_| "config lock poisoned".to_string())?;
+        let mut payload = String::from("protocol=2\nstreams:\n");
+        for (&stream_id, slot) in slots.iter() {
+            let target = slot
+                .target
+                .clone()
+                .unwrap_or_else(|| slot.meta.target_addr.clone());
+            let running = slot.handle.is_some();
+            let width = slot.metrics.width.load(Ordering::Relaxed);
+            let height = slot.metrics.height.load(Ordering::Relaxed);
+            let fps_x100 = slot.metrics.fps_x100.load(Ordering::Relaxed);
+            let bitrate_kbps = slot.metrics.bitrate_kbps.load(Ordering::Relaxed);
+            let fps = format!("{}.{:02}", fps_x100 / 100, fps_x100 % 100);
+            payload.push_str(&format!(
+                "{stream_id},{},{},{},{},{},{},{},{},{}\n",
+                slot.meta.display,
+                slot.meta.bind_addr,
+                target,
+                slot.meta.prefer_vaapi,
+                running,
+                width,
+                height,
+                fps,
+                bitrate_kbps
+            ));
+        }
+        Ok(payload)
+    }
+
+    fn set_stream_config(
+        &self,
+        stream_id: u32,
+        display: Option<String>,
+        bind_addr: Option<String>,
+        target_addr: Option<String>,
+        prefer_vaapi: Option<bool>,
+    ) -> Result<(), String> {
+        if let Some(display_id) = display.as_ref() {
+            validate_display_id(display_id)?;
+        }
+
+        let should_restart;
+        let mut changed = false;
+        {
+            let mut slots = self
+                .slots
+                .lock()
+                .map_err(|_| "config lock poisoned".to_string())?;
+            let slot = slots
+                .get_mut(&stream_id)
+                .ok_or_else(|| "stream_id not found".to_string())?;
+
+            if let Some(v) = display {
+                if slot.meta.display != v {
+                    slot.meta.display = v;
+                    changed = true;
+                }
+            }
+            if let Some(v) = bind_addr {
+                if slot.meta.bind_addr != v {
+                    slot.meta.bind_addr = v;
+                    changed = true;
+                }
+            }
+            if let Some(v) = target_addr {
+                if slot.meta.target_addr != v {
+                    slot.meta.target_addr = v.clone();
+                    slot.target = Some(v);
+                    changed = true;
+                }
+            }
+            if let Some(v) = prefer_vaapi {
+                if slot.meta.prefer_vaapi != v {
+                    slot.meta.prefer_vaapi = v;
+                    changed = true;
+                }
+            }
+            should_restart = changed && slot.handle.is_some();
+        }
+
+        if should_restart {
+            self.stop_stream(stream_id)?;
+            self.start_stream(stream_id)?;
+        }
+
+        Ok(())
+    }
+}
+
+fn derive_stream_config(base: &StreamConfig, stream_id: u32) -> StreamConfig {
+    let delta = stream_id.saturating_sub(1);
+    let display = if stream_id == 1 {
+        base.display.clone()
+    } else {
+        format!("prlx-v{stream_id}")
+    };
+    StreamConfig {
+        display,
+        bind_addr: offset_port(&base.bind_addr, delta),
+        target_addr: offset_port(&base.target_addr, delta),
+        prefer_vaapi: base.prefer_vaapi,
+    }
+}
+
+fn normalize_target(target_addr: String) -> Option<String> {
+    let trimmed = target_addr.trim();
+    if trimmed.is_empty() || trimmed.ends_with(":0") {
+        None
+    } else {
+        Some(target_addr)
+    }
+}
+
+fn offset_port(addr: &str, delta: u32) -> String {
+    if delta == 0 {
+        return addr.to_string();
+    }
+    let Some((host, port)) = split_host_port(addr) else {
+        return addr.to_string();
+    };
+    let Some(offset) = port.checked_add(delta as u16) else {
+        return addr.to_string();
+    };
+    format!("{host}:{offset}")
+}
+
+fn split_host_port(addr: &str) -> Option<(&str, u16)> {
+    let (host, port_str) = addr.rsplit_once(':')?;
+    let port = port_str.parse::<u16>().ok()?;
+    Some((host, port))
+}
+
+fn validate_display_id(display_id: &str) -> Result<(), String> {
+    if display_id.trim().is_empty() {
+        return Err("display id is required".to_string());
+    }
+    // Allow explicit X11 display selectors while still validating monitor ids.
+    if display_id.starts_with(':') {
+        return Ok(());
+    }
+
+    let physical = display::list_displays().map_err(|err| err.to_string())?;
+    let virtuals = display::list_virtual_displays().map_err(|err| err.to_string())?;
+    let physical_match = physical
+        .iter()
+        .any(|d| d.id == display_id || d.name == display_id);
+    let virtual_match = virtuals.iter().any(|d| d.id == display_id && d.enabled);
+    if physical_match || virtual_match {
+        Ok(())
+    } else {
+        Err("display_id not found".to_string())
     }
 }
 
@@ -296,8 +493,16 @@ fn handle_client(
     }
 }
 
-fn run_streaming(config: StreamConfig, stop: Arc<AtomicBool>) -> Result<(), String> {
-    println!("Starting streaming pipeline for {}", config.target_addr);
+fn run_streaming(
+    stream_id: u32,
+    config: StreamConfig,
+    stop: Arc<AtomicBool>,
+    metrics: Arc<StreamMetrics>,
+) -> Result<(), String> {
+    println!(
+        "Starting streaming pipeline stream_id={} target={}",
+        stream_id, config.target_addr
+    );
 
     let capture = capture::x11::init(capture::x11::X11CaptureConfig {
         display: config.display.clone(),
@@ -324,6 +529,10 @@ fn run_streaming(config: StreamConfig, stop: Arc<AtomicBool>) -> Result<(), Stri
     let mut encoder = encoder;
     let mut frame_counter: u64 = 0;
     let mut packet_counter: u64 = 0;
+    let mut bytes_counter: u64 = 0;
+    let mut window_frames: u64 = 0;
+    let mut window_bytes: u64 = 0;
+    let mut window_start = Instant::now();
 
     while !stop.load(Ordering::Relaxed) {
         let (pixels, width, height) = match capture.next_frame() {
@@ -336,6 +545,8 @@ fn run_streaming(config: StreamConfig, stop: Arc<AtomicBool>) -> Result<(), Stri
 
         let raw_frame =
             encode::h264::RawFrame::new(pixels, width, height, encode::h264::RawPixelFormat::Bgra);
+        metrics.width.store(width, Ordering::Relaxed);
+        metrics.height.store(height, Ordering::Relaxed);
 
         let encoded_frame = match encoder.encode_frame(&raw_frame) {
             Ok(frame) => frame,
@@ -345,7 +556,8 @@ fn run_streaming(config: StreamConfig, stop: Arc<AtomicBool>) -> Result<(), Stri
             }
         };
 
-        let packets = net::packetize_frame(&encoded_frame);
+        let encoded_size = encoded_frame.data.len() as u64;
+        let packets = net::packetize_frame(stream_id, &encoded_frame);
         for packet in &packets {
             if stop.load(Ordering::Relaxed) {
                 break;
@@ -358,15 +570,32 @@ fn run_streaming(config: StreamConfig, stop: Arc<AtomicBool>) -> Result<(), Stri
 
         frame_counter += 1;
         packet_counter += packets.len() as u64;
+        bytes_counter += encoded_size;
+        window_frames += 1;
+        window_bytes += encoded_size;
+
+        let elapsed = window_start.elapsed();
+        if elapsed >= Duration::from_secs(1) {
+            let elapsed_secs = elapsed.as_secs_f64().max(0.001);
+            let fps_x100 = ((window_frames as f64 * 100.0) / elapsed_secs) as u32;
+            let bitrate_kbps = (((window_bytes as f64 * 8.0) / elapsed_secs) / 1000.0) as u32;
+            metrics.fps_x100.store(fps_x100, Ordering::Relaxed);
+            metrics.bitrate_kbps.store(bitrate_kbps, Ordering::Relaxed);
+            window_frames = 0;
+            window_bytes = 0;
+            window_start = Instant::now();
+        }
 
         if frame_counter % 60 == 0 {
             println!(
-                "Streaming progress: frames_sent={frame_counter}, packets_sent={packet_counter}"
+                "Streaming progress stream_id={stream_id}: frames_sent={frame_counter}, packets_sent={packet_counter}, bytes_sent={bytes_counter}"
             );
         }
     }
 
-    println!("Streaming loop stopped");
+    metrics.fps_x100.store(0, Ordering::Relaxed);
+    metrics.bitrate_kbps.store(0, Ordering::Relaxed);
+    println!("Streaming loop stopped stream_id={stream_id}");
     Ok(())
 }
 
@@ -442,7 +671,23 @@ fn handle_status_client(
                 write_status(&mut stream, &status)?;
             }
             "start" => {
-                let result = stream_controller.start_stream();
+                let result = stream_controller.start_stream(1);
+                if let Ok(mut status) = daemon_status.lock() {
+                    if result.is_ok() {
+                        status.state = DaemonState::Streaming;
+                    }
+                }
+                let status = daemon_status
+                    .lock()
+                    .map_err(|_| "status lock poisoned".to_string())?;
+                write_status(&mut stream, &status)?;
+            }
+            l if l.starts_with("start ") => {
+                let stream_id = l
+                    .strip_prefix("start ")
+                    .and_then(|v| v.parse::<u32>().ok())
+                    .unwrap_or(1);
+                let result = stream_controller.start_stream(stream_id);
                 if let Ok(mut status) = daemon_status.lock() {
                     if result.is_ok() {
                         status.state = DaemonState::Streaming;
@@ -454,7 +699,7 @@ fn handle_status_client(
                 write_status(&mut stream, &status)?;
             }
             "stop" => {
-                let result = stream_controller.stop_stream();
+                let result = stream_controller.stop_stream(1);
                 if let Ok(mut status) = daemon_status.lock() {
                     if result.is_ok() {
                         status.state = DaemonState::Connected;
@@ -464,6 +709,26 @@ fn handle_status_client(
                     .lock()
                     .map_err(|_| "status lock poisoned".to_string())?;
                 write_status(&mut stream, &status)?;
+            }
+            l if l.starts_with("stop ") => {
+                let stream_id = l
+                    .strip_prefix("stop ")
+                    .and_then(|v| v.parse::<u32>().ok())
+                    .unwrap_or(1);
+                let result = stream_controller.stop_stream(stream_id);
+                if let Ok(mut status) = daemon_status.lock() {
+                    if result.is_ok() {
+                        status.state = DaemonState::Connected;
+                    }
+                }
+                let status = daemon_status
+                    .lock()
+                    .map_err(|_| "status lock poisoned".to_string())?;
+                write_status(&mut stream, &status)?;
+            }
+            "streams" => {
+                let payload = stream_controller.list_streams()?;
+                write_streams(&mut stream, &payload)?;
             }
             _ => {
                 let status = daemon_status
@@ -495,6 +760,18 @@ fn write_status(stream: &mut UnixStream, status: &DaemonStatus) -> Result<(), St
     stream
         .write_all(line.as_bytes())
         .map_err(|err| format!("Failed to write status: {err}"))?;
+    Ok(())
+}
+
+fn write_streams(stream: &mut UnixStream, payload: &str) -> Result<(), String> {
+    stream
+        .write_all(payload.as_bytes())
+        .map_err(|err| format!("Failed to write streams payload: {err}"))?;
+    if !payload.ends_with('\n') {
+        stream
+            .write_all(b"\n")
+            .map_err(|err| format!("Failed to finalize streams payload: {err}"))?;
+    }
     Ok(())
 }
 

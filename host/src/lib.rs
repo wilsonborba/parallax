@@ -2,6 +2,7 @@ pub mod capture;
 pub mod cli;
 pub mod control;
 pub mod core;
+pub mod display;
 pub mod domain;
 pub mod drivers;
 pub mod encode;

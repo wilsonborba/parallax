@@ -18,6 +18,44 @@ class ControlClient(
     private val connectTimeoutMillis: Int = DEFAULT_TIMEOUT_MS,
     private val readTimeoutMillis: Int = DEFAULT_TIMEOUT_MS,
 ) {
+    data class DisplayInfo(
+        val id: String,
+        val name: String,
+        val primary: Boolean,
+        val connected: Boolean,
+        val width: Int,
+        val height: Int,
+        val x: Int,
+        val y: Int,
+    )
+
+    data class VirtualDisplayInfo(
+        val id: String,
+        val enabled: Boolean,
+        val width: Int,
+        val height: Int,
+        val x: Int,
+        val y: Int,
+    )
+
+    data class DisplaysSnapshot(
+        val physical: List<DisplayInfo>,
+        val virtual: List<VirtualDisplayInfo>,
+    )
+
+    data class StreamInfo(
+        val streamId: Int,
+        val displayId: String,
+        val bindAddr: String,
+        val targetAddr: String,
+        val preferVaapi: Boolean,
+        val running: Boolean,
+        val width: Int,
+        val height: Int,
+        val fps: Float,
+        val bitrateKbps: Int,
+    )
+
     fun openSession(host: String, port: Int, streamPort: Int? = null): ControlSession {
         val socket = Socket()
         socket.tcpNoDelay = true
@@ -52,8 +90,8 @@ class ControlClient(
         private val input: InputStream = socket.getInputStream()
         private val output: OutputStream = socket.getOutputStream()
 
-        fun startStream() {
-            writeFrame(MessageType.StartStream, ByteArray(0))
+        fun startStream(streamId: Int = 1) {
+            writeFrame(MessageType.StartStream, "stream_id=$streamId".toByteArray())
             val response = readFrame()
             when (response.messageType) {
                 MessageType.StreamStarted -> Unit
@@ -62,13 +100,75 @@ class ControlClient(
             }
         }
 
-        fun stopStream() {
-            writeFrame(MessageType.StopStream, ByteArray(0))
+        fun stopStream(streamId: Int = 1) {
+            writeFrame(MessageType.StopStream, "stream_id=$streamId".toByteArray())
             val response = readFrame()
             when (response.messageType) {
                 MessageType.StreamStopped -> Unit
                 MessageType.Error -> throw IllegalStateException(response.payload.decodeToString())
                 else -> throw IllegalStateException("Unexpected response to stop stream: ${response.messageType}")
+            }
+        }
+
+        fun listDisplays(): DisplaysSnapshot {
+            writeFrame(MessageType.ListDisplays, ByteArray(0))
+            val response = readFrame()
+            return when (response.messageType) {
+                MessageType.Displays -> parseDisplaysPayload(response.payload.decodeToString())
+                MessageType.Error -> throw IllegalStateException(response.payload.decodeToString())
+                else -> throw IllegalStateException("Unexpected response to list displays: ${response.messageType}")
+            }
+        }
+
+        fun addVirtualDisplay(id: String, width: Int, height: Int, x: Int, y: Int) {
+            val payload = "$id,$width,$height,$x,$y".toByteArray()
+            writeFrame(MessageType.AddVirtualDisplay, payload)
+            val response = readFrame()
+            when (response.messageType) {
+                MessageType.DisplayOpAck -> Unit
+                MessageType.Error -> throw IllegalStateException(response.payload.decodeToString())
+                else -> throw IllegalStateException("Unexpected response to add virtual display: ${response.messageType}")
+            }
+        }
+
+        fun removeVirtualDisplay(id: String) {
+            writeFrame(MessageType.RemoveVirtualDisplay, id.toByteArray())
+            val response = readFrame()
+            when (response.messageType) {
+                MessageType.DisplayOpAck -> Unit
+                MessageType.Error -> throw IllegalStateException(response.payload.decodeToString())
+                else -> throw IllegalStateException("Unexpected response to remove virtual display: ${response.messageType}")
+            }
+        }
+
+        fun listStreams(): List<StreamInfo> {
+            writeFrame(MessageType.ListStreams, ByteArray(0))
+            val response = readFrame()
+            return when (response.messageType) {
+                MessageType.Streams -> parseStreamsPayload(response.payload.decodeToString())
+                MessageType.Error -> throw IllegalStateException(response.payload.decodeToString())
+                else -> throw IllegalStateException("Unexpected response to list streams: ${response.messageType}")
+            }
+        }
+
+        fun setStreamConfig(
+            streamId: Int,
+            displayId: String? = null,
+            bindAddr: String? = null,
+            targetAddr: String? = null,
+            preferVaapi: Boolean? = null,
+        ) {
+            val lines = mutableListOf("stream_id=$streamId")
+            if (!displayId.isNullOrBlank()) lines.add("display=$displayId")
+            if (!bindAddr.isNullOrBlank()) lines.add("bind_addr=$bindAddr")
+            if (!targetAddr.isNullOrBlank()) lines.add("target_addr=$targetAddr")
+            if (preferVaapi != null) lines.add("prefer_vaapi=$preferVaapi")
+            writeFrame(MessageType.SetStreamConfig, lines.joinToString("\n").toByteArray())
+            val response = readFrame()
+            when (response.messageType) {
+                MessageType.StreamConfigAck -> Unit
+                MessageType.Error -> throw IllegalStateException(response.payload.decodeToString())
+                else -> throw IllegalStateException("Unexpected response to set stream config: ${response.messageType}")
             }
         }
 
@@ -148,6 +248,92 @@ class ControlClient(
             }
             output.flush()
         }
+
+        private fun parseDisplaysPayload(raw: String): DisplaysSnapshot {
+            val physical = mutableListOf<DisplayInfo>()
+            val virtual = mutableListOf<VirtualDisplayInfo>()
+            var section: String? = null
+
+            raw.lineSequence().forEach { lineRaw ->
+                val line = lineRaw.trim()
+                if (line.isEmpty() || line.startsWith("protocol=")) return@forEach
+                if (line == "physical:") {
+                    section = "physical"
+                    return@forEach
+                }
+                if (line == "virtual:") {
+                    section = "virtual"
+                    return@forEach
+                }
+
+                val parts = line.split(",")
+                when (section) {
+                    "physical" -> if (parts.size >= 8) {
+                        physical.add(
+                            DisplayInfo(
+                                id = parts[0],
+                                name = parts[1],
+                                primary = parts[2].toBooleanStrictOrNull() ?: false,
+                                connected = parts[3].toBooleanStrictOrNull() ?: false,
+                                width = parts[4].toIntOrNull() ?: 0,
+                                height = parts[5].toIntOrNull() ?: 0,
+                                x = parts[6].toIntOrNull() ?: 0,
+                                y = parts[7].toIntOrNull() ?: 0,
+                            ),
+                        )
+                    }
+                    "virtual" -> if (parts.size >= 6) {
+                        virtual.add(
+                            VirtualDisplayInfo(
+                                id = parts[0],
+                                enabled = parts[1].toBooleanStrictOrNull() ?: false,
+                                width = parts[2].toIntOrNull() ?: 0,
+                                height = parts[3].toIntOrNull() ?: 0,
+                                x = parts[4].toIntOrNull() ?: 0,
+                                y = parts[5].toIntOrNull() ?: 0,
+                            ),
+                        )
+                    }
+                }
+            }
+
+            return DisplaysSnapshot(physical = physical, virtual = virtual)
+        }
+
+        private fun parseStreamsPayload(raw: String): List<StreamInfo> {
+            val streams = mutableListOf<StreamInfo>()
+            var inStreams = false
+
+            raw.lineSequence().forEach { lineRaw ->
+                val line = lineRaw.trim()
+                if (line.isEmpty() || line.startsWith("protocol=")) return@forEach
+                if (line == "streams:") {
+                    inStreams = true
+                    return@forEach
+                }
+                if (!inStreams) return@forEach
+
+                val parts = line.split(",")
+                if (parts.size < 6) return@forEach
+
+                streams.add(
+                    StreamInfo(
+                        streamId = parts[0].toIntOrNull() ?: return@forEach,
+                        displayId = parts[1],
+                        bindAddr = parts[2],
+                        targetAddr = parts[3],
+                        preferVaapi = parts[4].toBooleanStrictOrNull() ?: false,
+                        running = parts[5].toBooleanStrictOrNull() ?: false,
+                        width = parts.getOrNull(6)?.toIntOrNull() ?: 0,
+                        height = parts.getOrNull(7)?.toIntOrNull() ?: 0,
+                        fps = parts.getOrNull(8)?.toFloatOrNull() ?: 0f,
+                        bitrateKbps = parts.getOrNull(9)?.toIntOrNull() ?: 0,
+                    ),
+                )
+            }
+
+            return streams
+        }
     }
 
     private companion object {
@@ -201,8 +387,17 @@ class ControlClient(
         StopStream(0x11),
         StreamStarted(0x12),
         StreamStopped(0x13),
+        ListStreams(0x14),
+        Streams(0x15),
+        SetStreamConfig(0x16),
+        StreamConfigAck(0x17),
         Ping(0x20),
         Pong(0x21),
+        ListDisplays(0x30),
+        Displays(0x31),
+        AddVirtualDisplay(0x32),
+        RemoveVirtualDisplay(0x33),
+        DisplayOpAck(0x34),
         Error(0x7f),
         ;
 

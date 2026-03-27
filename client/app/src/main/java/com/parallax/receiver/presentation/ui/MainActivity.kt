@@ -17,6 +17,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.parallax.receiver.dal.local.SharedPreferencesSettingsStore
 import com.parallax.receiver.domain.module.SetScaleUseCase
+import com.parallax.receiver.domain.module.SetViewModeUseCase
 import com.parallax.receiver.domain.module.SetStreamEndpointUseCase
 import com.parallax.receiver.domain.module.StartStreamUseCase
 import com.parallax.receiver.domain.module.StopStreamUseCase
@@ -47,6 +48,7 @@ class MainActivity : ComponentActivity() {
                         onStartClicked = streamViewModel::onStartClicked,
                         onStopClicked = streamViewModel::onStopClicked,
                         onScaleChanged = streamViewModel::onScaleChanged,
+                        onViewModeChanged = streamViewModel::onViewModeChanged,
                         onHostChanged = streamViewModel::onHostChanged,
                         onStreamPortChanged = streamViewModel::onStreamPortChanged,
                         onControlPortChanged = streamViewModel::onControlPortChanged,
@@ -54,6 +56,12 @@ class MainActivity : ComponentActivity() {
                         onQrPayloadScanned = streamViewModel::onQrPayloadScanned,
                         onSurfaceAvailable = streamViewModel::onSurfaceAvailable,
                         onSurfaceDestroyed = streamViewModel::onSurfaceDestroyed,
+                        onAddMonitorClicked = streamViewModel::onAddMonitorClicked,
+                        onRemoveMonitorClicked = streamViewModel::onRemoveMonitorClicked,
+                        onRefreshTopologyClicked = streamViewModel::onRefreshTopologyClicked,
+                        onStartMonitorClicked = streamViewModel::onStartMonitorClicked,
+                        onStopMonitorClicked = streamViewModel::onStopMonitorClicked,
+                        onStatsOverlayVisibilityChanged = streamViewModel::onStatsOverlayVisibilityChanged,
                     )
                 }
             }
@@ -82,6 +90,7 @@ private class StreamViewModelFactory(
             val startStreamUseCase = StartStreamUseCase(streamSessionService)
             val stopStreamUseCase = StopStreamUseCase(streamSessionService)
             val setScaleUseCase = SetScaleUseCase(settingsStore, streamSessionService)
+            val setViewModeUseCase = SetViewModeUseCase(settingsStore, streamSessionService)
             val setStreamEndpointUseCase = SetStreamEndpointUseCase(settingsStore, streamSessionService)
             @Suppress("UNCHECKED_CAST")
             return StreamViewModel(
@@ -89,6 +98,7 @@ private class StreamViewModelFactory(
                 startStream = startStreamUseCase,
                 stopStream = stopStreamUseCase,
                 setScale = setScaleUseCase,
+                setViewMode = setViewModeUseCase,
                 setStreamEndpoint = setStreamEndpointUseCase,
             ) as T
         }
