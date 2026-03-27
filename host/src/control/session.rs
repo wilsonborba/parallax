@@ -80,7 +80,12 @@ impl Session {
     }
 
     pub fn handle_frame(&mut self, frame: Frame) -> Vec<Frame> {
-        match frame.message_type {
+        let msg = frame.message_type;
+        eprintln!(
+            "[control] rx from {} state={:?} msg={:?}",
+            self.client_addr, self.state, msg
+        );
+        let responses = match msg {
             MessageType::Hello => self.handle_hello(),
             MessageType::PairRequest => self.handle_pair_request(frame.payload),
             MessageType::AuthResponse => self.handle_auth_response(frame.payload),
@@ -91,12 +96,20 @@ impl Session {
             MessageType::ListDisplays => self.handle_list_displays(),
             MessageType::AddVirtualDisplay => self.handle_add_virtual_display(frame.payload),
             MessageType::RemoveVirtualDisplay => self.handle_remove_virtual_display(frame.payload),
+            MessageType::ClientLog => self.handle_client_log(frame.payload),
             MessageType::Ping => vec![Frame::new(MessageType::Pong, Vec::new())],
             _ => vec![Frame::new(
                 MessageType::Error,
                 b"Unexpected message".to_vec(),
             )],
-        }
+        };
+        eprintln!(
+            "[control] tx to {} count={} for msg={:?}",
+            self.client_addr,
+            responses.len(),
+            msg
+        );
+        responses
     }
 
     fn handle_hello(&mut self) -> Vec<Frame> {
@@ -336,9 +349,11 @@ impl Session {
             )];
         }
 
+        eprintln!("[control] list_displays requested by {}", self.client_addr);
         let physical = match display::list_displays() {
             Ok(displays) => displays,
             Err(err) => {
+                eprintln!("[control] list_displays physical failed for {}: {}", self.client_addr, err);
                 return vec![Frame::new(MessageType::Error, err.into_bytes())];
             }
         };
@@ -346,9 +361,16 @@ impl Session {
         let virtuals = match display::list_virtual_displays() {
             Ok(displays) => displays,
             Err(err) => {
+                eprintln!("[control] list_displays virtual failed for {}: {}", self.client_addr, err);
                 return vec![Frame::new(MessageType::Error, err.into_bytes())];
             }
         };
+        eprintln!(
+            "[control] list_displays result for {}: physical={} virtual={}",
+            self.client_addr,
+            physical.len(),
+            virtuals.len()
+        );
 
         let mut payload = String::new();
         payload.push_str("protocol=2\n");
@@ -385,12 +407,14 @@ impl Session {
         let raw = match String::from_utf8(payload) {
             Ok(value) => value,
             Err(_) => {
+                eprintln!("[control] add_virtual_display invalid utf8 from {}", self.client_addr);
                 return vec![Frame::new(
                     MessageType::Error,
                     b"invalid add display payload".to_vec(),
                 )];
             }
         };
+        eprintln!("[control] add_virtual_display from {} payload={}", self.client_addr, raw);
 
         let parts: Vec<&str> = raw.split(',').collect();
         if parts.len() != 5 {
@@ -431,7 +455,10 @@ impl Session {
                 MessageType::DisplayOpAck,
                 b"virtual display added".to_vec(),
             )],
-            Err(err) => vec![Frame::new(MessageType::Error, err.into_bytes())],
+            Err(err) => {
+                eprintln!("[control] add_virtual_display failed for {}: {}", self.client_addr, err);
+                vec![Frame::new(MessageType::Error, err.into_bytes())]
+            }
         }
     }
 
@@ -446,12 +473,14 @@ impl Session {
         let id = match String::from_utf8(payload) {
             Ok(value) => value.trim().to_string(),
             Err(_) => {
+                eprintln!("[control] remove_virtual_display invalid utf8 from {}", self.client_addr);
                 return vec![Frame::new(
                     MessageType::Error,
                     b"invalid remove display payload".to_vec(),
                 )];
             }
         };
+        eprintln!("[control] remove_virtual_display from {} id={}", self.client_addr, id);
 
         if id.is_empty() {
             return vec![Frame::new(MessageType::Error, b"display id required".to_vec())];
@@ -476,6 +505,47 @@ impl Session {
             )],
             Err(err) => vec![Frame::new(MessageType::Error, err.into_bytes())],
         }
+    }
+
+    fn handle_client_log(&mut self, payload: Vec<u8>) -> Vec<Frame> {
+        if self.state != HandshakeState::Paired {
+            return vec![Frame::new(
+                MessageType::Error,
+                b"pairing required".to_vec(),
+            )];
+        }
+
+        let raw = match String::from_utf8(payload) {
+            Ok(value) => value,
+            Err(_) => {
+                return vec![Frame::new(
+                    MessageType::Error,
+                    b"invalid client log payload".to_vec(),
+                )];
+            }
+        };
+
+        let mut level = "INFO".to_string();
+        let mut message = String::new();
+        for line in raw.lines() {
+            if let Some((k, v)) = line.split_once('=') {
+                match k {
+                    "level" => level = v.to_uppercase(),
+                    "message" => message = v.to_string(),
+                    _ => {}
+                }
+            }
+        }
+        if message.is_empty() {
+            message = raw;
+        }
+
+        eprintln!(
+            "[client-log][{}][{}] {}",
+            self.client_addr, level, message
+        );
+
+        vec![Frame::new(MessageType::ClientLogAck, b"ok".to_vec())]
     }
 
     fn next_nonce(&mut self) -> [u8; crypto::NONCE_LEN] {

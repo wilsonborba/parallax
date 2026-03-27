@@ -52,6 +52,8 @@ class StreamSessionService(
     )
     private var connectionJob: Job? = null
     private var renderSurface: Surface? = null
+    private val extraRenderSurfaces = mutableMapOf<Int, Surface>()
+    private val extraReceivers = mutableMapOf<Int, H264StreamReceiver>()
     private var pendingStartConfig: StreamConfig? = null
     private var controlSession: ControlClient.ControlSession? = null
     private var resumeOnSurfaceAvailable: Boolean = false
@@ -82,6 +84,7 @@ class StreamSessionService(
                 "streamPort" to config.streamPort,
             ),
         )
+        appendDebugLog("info", "Start requested: ${config.host}:${config.controlPort} (udp ${config.streamPort})")
         mutableState.update { current ->
             current.copy(
                 config = config,
@@ -119,17 +122,35 @@ class StreamSessionService(
     fun stopStream() {
         connectionJob?.cancel()
         streamReceiver.stop()
+        stopAllExtraReceivers()
         stopControlSession()
         pendingStartConfig = null
         mutableState.update { current ->
             current.copy(
                 streamState = StreamState(StreamState.Status.Idle),
                 videoDimensions = null,
+                receiverRunning = false,
             )
         }
+        appendDebugLog("info", "Stream stopped by user.")
     }
 
-    fun setRenderSurface(surface: Surface) {
+    fun setRenderSurface(streamId: Int, surface: Surface) {
+        if (streamId != 1) {
+            extraRenderSurfaces[streamId] = surface
+            val status = mutableState.value.streamState.status
+            if (status == StreamState.Status.Streaming || status == StreamState.Status.Connecting) {
+                val config = pendingStartConfig ?: mutableState.value.config
+                if (controlSession == null && !openControlSession(config)) {
+                    return
+                }
+                if (ensureStreamStarted(streamId)) {
+                    startExtraReceiver(streamId, config, surface)
+                    updateReceiverRunningState()
+                }
+            }
+            return
+        }
         renderSurface = surface
         if (streamReceiver.isRunning()) {
             return
@@ -206,13 +227,21 @@ class StreamSessionService(
         }
     }
 
-    fun clearRenderSurface() {
+    fun clearRenderSurface(streamId: Int) {
+        if (streamId != 1) {
+            extraRenderSurfaces.remove(streamId)
+            extraReceivers.remove(streamId)?.stop()
+            updateReceiverRunningState()
+            return
+        }
         renderSurface = null
         val currentStatus = mutableState.value.streamState.status
         val shouldResumeOnSurface = currentStatus == StreamState.Status.Streaming ||
             currentStatus == StreamState.Status.Connecting
         resumeOnSurfaceAvailable = shouldResumeOnSurface
         streamReceiver.stop()
+        stopAllExtraReceivers()
+        updateReceiverRunningState()
         if (shouldResumeOnSurface) {
             return
         }
@@ -283,23 +312,30 @@ class StreamSessionService(
 
     fun requestAddMonitor() {
         runTopologyCommand("Monitor added.") { session ->
-            val displays = session.listDisplays()
+            val displays = topologyStep("listDisplays", session) { session.listDisplays() }
             val occupiedSlots = displays.virtual.mapNotNull { parseStreamIdFromDisplayId(it.id) }.toSet()
-            val slot = (1..MAX_VIRTUAL_MONITORS).firstOrNull { it !in occupiedSlots }
-                ?: throw IllegalStateException("Maximum of $MAX_VIRTUAL_MONITORS monitors reached.")
+            // stream 1 is reserved for the primary panel; virtual additions start at stream 2.
+            val slot = (2..MAX_STREAMS).firstOrNull { it !in occupiedSlots }
+                ?: throw IllegalStateException("Maximum of ${MAX_STREAMS - 1} extra monitors reached.")
             val displayId = "prlx-v$slot"
             val rightMost = (
                 displays.physical.maxOfOrNull { it.x + it.width } ?: 0
                 ).coerceAtLeast(displays.virtual.maxOfOrNull { it.x + it.width } ?: 0)
-            session.addVirtualDisplay(
-                id = displayId,
-                width = DEFAULT_MONITOR_WIDTH,
-                height = DEFAULT_MONITOR_HEIGHT,
-                x = rightMost,
-                y = 0,
-            )
-            val startMessage = configureAndStartMonitor(session, displayId)
-            syncTopology(session, startMessage ?: "Monitor $displayId added.")
+            topologyStep("addVirtualDisplay($displayId)", session) {
+                session.addVirtualDisplay(
+                    id = displayId,
+                    width = DEFAULT_MONITOR_WIDTH,
+                    height = DEFAULT_MONITOR_HEIGHT,
+                    x = rightMost,
+                    y = 0,
+                )
+            }
+            val startMessage = topologyStep("configureAndStartMonitor($displayId)", session) {
+                configureAndStartMonitor(session, displayId)
+            }
+            topologyStep("syncTopology", session) {
+                syncTopology(session, startMessage ?: "Monitor $displayId added.")
+            }
         }
     }
 
@@ -308,13 +344,13 @@ class StreamSessionService(
             return
         }
         runTopologyCommand("Monitor removed.") { session ->
-            val streams = session.listStreams()
+            val streams = topologyStep("listStreams", session) { session.listStreams() }
             val attached = streams.firstOrNull { it.displayId == displayId && it.running }
             if (attached != null) {
-                session.stopStream(attached.streamId)
+                topologyStep("stopStream(${attached.streamId})", session) { session.stopStream(attached.streamId) }
             }
-            session.removeVirtualDisplay(displayId)
-            syncTopology(session, "Monitor $displayId removed.")
+            topologyStep("removeVirtualDisplay($displayId)", session) { session.removeVirtualDisplay(displayId) }
+            topologyStep("syncTopology", session) { syncTopology(session, "Monitor $displayId removed.") }
         }
     }
 
@@ -323,8 +359,10 @@ class StreamSessionService(
             return
         }
         runTopologyCommand("Monitor started.") { session ->
-            val status = configureAndStartMonitor(session, displayId)
-            syncTopology(session, status ?: "Monitor $displayId started.")
+            val status = topologyStep("configureAndStartMonitor($displayId)", session) {
+                configureAndStartMonitor(session, displayId)
+            }
+            topologyStep("syncTopology", session) { syncTopology(session, status ?: "Monitor $displayId started.") }
         }
     }
 
@@ -333,14 +371,16 @@ class StreamSessionService(
             return
         }
         runTopologyCommand("Monitor stopped.") { session ->
-            stopMonitorByDisplay(session, displayId)
-            syncTopology(session, "Monitor $displayId stopped.")
+            topologyStep("stopMonitorByDisplay($displayId)", session) { stopMonitorByDisplay(session, displayId) }
+            topologyStep("syncTopology", session) { syncTopology(session, "Monitor $displayId stopped.") }
         }
     }
 
     private fun startReceiver(config: StreamConfig, surface: Surface) {
         try {
-            streamReceiver.start(config.streamPort, surface)
+            streamReceiver.start(config.streamPort, surface, streamId = 1L)
+            reconcileExtraReceivers(config)
+            updateReceiverRunningState()
         } catch (e: Exception) {
             logger.error(
                 TAG,
@@ -353,9 +393,16 @@ class StreamSessionService(
                         StreamState.Status.Error,
                         e.message ?: "Failed to start stream receiver.",
                     ),
+                    receiverRunning = false,
                 )
             }
         }
+    }
+
+    private fun startExtraReceiver(streamId: Int, config: StreamConfig, surface: Surface) {
+        val receiver = extraReceivers.getOrPut(streamId) { H264StreamReceiver() }
+        val port = streamPortFor(streamId, config.streamPort)
+        receiver.start(port, surface, streamId = streamId.toLong())
     }
 
     private fun openControlSession(config: StreamConfig): Boolean {
@@ -380,6 +427,7 @@ class StreamSessionService(
                 config.streamPort,
             )
             controlSession = session
+            appendDebugLog("info", "Control session connected: ${config.host}:${config.controlPort}", session)
             true
         } catch (e: Exception) {
             logger.error(
@@ -388,13 +436,18 @@ class StreamSessionService(
                 mapOf("error" to e.message, "exception" to e),
             )
             mutableState.update { current ->
-                current.copy(
-                    streamState = StreamState(
-                        StreamState.Status.Error,
-                        e.message ?: "Failed to open control session.",
-                    ),
-                )
+                if (current.receiverRunning) {
+                    current.copy(topologyStatus = "Control session lost: ${e.message ?: "unknown"}")
+                } else {
+                    current.copy(
+                        streamState = StreamState(
+                            StreamState.Status.Error,
+                            e.message ?: "Failed to open control session.",
+                        ),
+                    )
+                }
             }
+            appendDebugLog("error", "Control session error: ${e.message ?: "unknown"}")
             false
         }
     }
@@ -408,6 +461,18 @@ class StreamSessionService(
             logger.warn(TAG, "Failed to stop control session", mapOf("error" to e.message, "exception" to e))
         } finally {
             session.close()
+            stopAllExtraReceivers()
+            updateReceiverRunningState()
+        }
+    }
+
+    private fun resetControlSession() {
+        val session = controlSession ?: return
+        controlSession = null
+        try {
+            session.close()
+        } catch (_: Exception) {
+            // Best effort cleanup for stale sockets.
         }
     }
 
@@ -441,37 +506,71 @@ class StreamSessionService(
         mutableState.update { current ->
             current.copy(topologyBusy = true, topologyStatus = "Applying monitor topology...")
         }
+        appendDebugLog("info", "Topology: applying command...")
         coroutineScope.launch {
             val config = mutableState.value.config
-            val sessionReady = openControlSession(config)
-            if (!sessionReady) {
-                mutableState.update { current ->
-                    current.copy(topologyBusy = false, topologyStatus = "Failed to open control session.")
-                }
-                return@launch
-            }
-            val session = controlSession ?: run {
-                mutableState.update { current ->
-                    current.copy(topologyBusy = false, topologyStatus = "Control session not available.")
-                }
-                return@launch
-            }
-            try {
-                command(session)
-                mutableState.update { current ->
-                    current.copy(topologyBusy = false, topologyStatus = successStatus)
-                }
-            } catch (e: Exception) {
-                logger.warn(
-                    TAG,
-                    "Monitor topology command failed",
-                    mapOf("error" to e.message, "exception" to e),
-                )
-                mutableState.update { current ->
-                    current.copy(
-                        topologyBusy = false,
-                        topologyStatus = e.message ?: "Topology command failed.",
+            var recoveredOnce = false
+            while (true) {
+                val session = try {
+                    openTransientControlSession(config)
+                } catch (e: Exception) {
+                    logger.warn(
+                        TAG,
+                        "Failed to open transient control session",
+                        mapOf("error" to e.message, "exception" to e),
                     )
+                    mutableState.update { current ->
+                        current.copy(
+                            topologyBusy = false,
+                            topologyStatus = e.message ?: "Failed to open control session.",
+                        )
+                    }
+                    appendDebugLog("error", "Topology: open session failed: ${e.message ?: "unknown"}")
+                    return@launch
+                }
+                try {
+                    appendDebugLog("debug", "Topology: transient control session connected", session)
+                    command(session)
+                    reconcileExtraReceivers(config)
+                    mutableState.update { current ->
+                        current.copy(topologyBusy = false, topologyStatus = successStatus)
+                    }
+                    appendDebugLog("info", "Topology: success ($successStatus)")
+                    return@launch
+                } catch (e: Exception) {
+                    val recoverable = isRecoverableControlError(e)
+                    if (recoverable && !recoveredOnce) {
+                        recoveredOnce = true
+                        logger.warn(
+                            TAG,
+                            "Topology command failed on stale control session; retrying",
+                            mapOf("error" to e.message, "exception" to e),
+                        )
+                        mutableState.update { current ->
+                            current.copy(topologyBusy = true, topologyStatus = "Reconnecting to host...")
+                        }
+                        appendDebugLog("warn", "Topology: recoverable error (${e.message}); retrying...", session)
+                        continue
+                    }
+                    logger.warn(
+                        TAG,
+                        "Monitor topology command failed",
+                        mapOf("error" to e.message, "exception" to e),
+                    )
+                    mutableState.update { current ->
+                        current.copy(
+                            topologyBusy = false,
+                            topologyStatus = e.message ?: "Topology command failed.",
+                        )
+                    }
+                    appendDebugLog("error", "Topology failed: ${e.message ?: "unknown"}", session)
+                    return@launch
+                } finally {
+                    try {
+                        session.close()
+                    } catch (_: Exception) {
+                        // best effort
+                    }
                 }
             }
         }
@@ -479,14 +578,23 @@ class StreamSessionService(
 
     private fun syncTopology(session: ControlClient.ControlSession, status: String?) {
         val displays = session.listDisplays()
-        val streamsByDisplay = session.listStreams().associateBy { it.displayId }
+        val streams = session.listStreams()
+        val streamsByDisplay = streams.associateBy { it.displayId }
+        val streamsById = streams.associateBy { it.streamId }
         val panels = displays.virtual
             .filter { it.enabled }
             .sortedBy { it.x }
-            .map { display ->
-                val stream = streamsByDisplay[display.id]
+            .mapNotNull { display ->
+                val inferredStreamId = parseStreamIdFromDisplayId(display.id) ?: 1
+                if (inferredStreamId == 1) {
+                    // stream 1 is the primary panel; skip legacy virtual mapping on v1
+                    return@mapNotNull null
+                }
+                // Prefer stream-id mapping (v1 -> stream 1, v2 -> stream 2, ...),
+                // fallback to display-id mapping for hosts that already report it.
+                val stream = streamsById[inferredStreamId] ?: streamsByDisplay[display.id]
                 MonitorPanelState(
-                    streamId = stream?.streamId ?: parseStreamIdFromDisplayId(display.id) ?: 1,
+                    streamId = stream?.streamId ?: inferredStreamId,
                     displayId = display.id,
                     width = stream?.width?.takeIf { it > 0 } ?: display.width,
                     height = stream?.height?.takeIf { it > 0 } ?: display.height,
@@ -504,6 +612,7 @@ class StreamSessionService(
                 topologyStatus = status,
             )
         }
+        reconcileExtraReceivers(mutableState.value.config)
     }
 
     private fun parseStreamIdFromDisplayId(displayId: String): Int? {
@@ -516,6 +625,7 @@ class StreamSessionService(
         val session = controlSession ?: return
         try {
             syncTopology(session, null)
+            reconcileExtraReceivers(mutableState.value.config)
         } catch (e: Exception) {
             logger.warn(TAG, "Failed to refresh topology", mapOf("error" to e.message, "exception" to e))
         }
@@ -526,14 +636,20 @@ class StreamSessionService(
         displayId: String,
     ): String? {
         val streamId = parseStreamIdFromDisplayId(displayId) ?: 1
+        val attached = session.listStreams().firstOrNull { it.displayId == displayId }
+        if (attached?.running == true) {
+            return "Monitor $displayId already running."
+        }
         return try {
-            session.setStreamConfig(streamId = streamId, displayId = displayId)
+            // Host currently expects X11 DISPLAY (e.g. :0.0) for capture.
+            // Do not send virtual monitor id as display selector until host supports monitor-region capture.
+            session.setStreamConfig(streamId = streamId)
             session.startStream(streamId)
             null
         } catch (e: Exception) {
             if (isStreamNotFoundError(e) && streamId != 1) {
                 // Fallback for current single-stream host: bind to stream 1.
-                session.setStreamConfig(streamId = 1, displayId = displayId)
+                session.setStreamConfig(streamId = 1)
                 session.startStream(1)
                 "Host single-stream fallback: $displayId bound to stream 1."
             } else {
@@ -567,12 +683,133 @@ class StreamSessionService(
         return message.contains("stream_id not found")
     }
 
+    private fun isRecoverableControlError(error: Exception): Boolean {
+        val message = error.message?.lowercase() ?: return false
+        return message.contains("broken pipe") ||
+            message.contains("connection reset") ||
+            message.contains("socket closed") ||
+            message.contains("eof") ||
+            message.contains("unexpected end of stream")
+    }
+
+    private fun openTransientControlSession(config: StreamConfig): ControlClient.ControlSession {
+        val pairingToken = resolvePairingToken(config)
+        val transientClient = ControlClient(pairingToken = pairingToken, logger = logger)
+        appendDebugLog(
+            "debug",
+            "Topology: opening transient session ${config.host}:${config.controlPort} (no streamPort)",
+            forwardToHost = false,
+        )
+        return transientClient.openSession(
+            config.host,
+            config.controlPort,
+            null,
+        )
+    }
+
+    private fun appendDebugLog(
+        level: String,
+        message: String,
+        session: ControlClient.ControlSession? = null,
+        forwardToHost: Boolean = true,
+    ) {
+        val line = "[${level.uppercase()}] $message"
+        mutableState.update { current ->
+            val next = (current.debugLogs + line).takeLast(MAX_DEBUG_LOGS)
+            current.copy(debugLogs = next)
+        }
+        if (FORWARD_CLIENT_LOGS_TO_HOST && forwardToHost && session != null) {
+            emitClientLogToHost(session, level, message)
+        }
+    }
+
+    private inline fun <T> topologyStep(
+        name: String,
+        session: ControlClient.ControlSession,
+        block: () -> T,
+    ): T {
+        appendDebugLog("debug", "Topology step: $name", session)
+        return try {
+            val result = block()
+            appendDebugLog("debug", "Topology step OK: $name", session)
+            result
+        } catch (e: Exception) {
+            appendDebugLog("error", "Topology step FAILED: $name -> ${e.message ?: "unknown"}", session)
+            throw e
+        }
+    }
+
+    private fun emitClientLogToHost(
+        session: ControlClient.ControlSession,
+        level: String,
+        message: String,
+    ) {
+        try {
+            session.sendClientLog(level, message)
+        } catch (e: Exception) {
+            logger.warn(
+                TAG,
+                "Failed to forward client log to host",
+                mapOf("error" to e.message, "level" to level, "message" to message),
+            )
+        }
+    }
+
+    private fun reconcileExtraReceivers(config: StreamConfig) {
+        val status = mutableState.value.streamState.status
+        if (status != StreamState.Status.Streaming && status != StreamState.Status.Connecting) {
+            stopAllExtraReceivers()
+            updateReceiverRunningState()
+            return
+        }
+
+        val desiredIds = mutableState.value.monitorPanels
+            .asSequence()
+            .filter { it.running && it.streamId != 1 }
+            .map { it.streamId }
+            .toSet()
+
+        val staleIds = extraReceivers.keys.filter { it !in desiredIds || extraRenderSurfaces[it] == null }
+        staleIds.forEach { streamId ->
+            extraReceivers.remove(streamId)?.stop()
+        }
+
+        desiredIds.forEach { streamId ->
+            val surface = extraRenderSurfaces[streamId] ?: return@forEach
+            if (controlSession == null && !openControlSession(config)) {
+                return
+            }
+            if (!ensureStreamStarted(streamId)) {
+                return@forEach
+            }
+            startExtraReceiver(streamId, config, surface)
+        }
+
+        updateReceiverRunningState()
+    }
+
+    private fun stopAllExtraReceivers() {
+        extraReceivers.values.forEach { it.stop() }
+        extraReceivers.clear()
+    }
+
+    private fun updateReceiverRunningState() {
+        val running = streamReceiver.isRunning() || extraReceivers.values.any { it.isRunning() }
+        mutableState.update { current -> current.copy(receiverRunning = running) }
+    }
+
+    private fun streamPortFor(streamId: Int, basePort: Int): Int {
+        return basePort + (streamId - 1).coerceAtLeast(0)
+    }
+
     private companion object {
         private const val TAG = "StreamSessionService"
         private const val DEFAULT_PAIRING_TOKEN = "parallax"
-        private const val MAX_VIRTUAL_MONITORS = 3
+        private const val MAX_STREAMS = 3
         private const val DEFAULT_MONITOR_WIDTH = 1920
         private const val DEFAULT_MONITOR_HEIGHT = 1080
+        private const val MAX_DEBUG_LOGS = 200
+        private const val FORWARD_CLIENT_LOGS_TO_HOST = true
     }
 
     private fun resolvePairingToken(config: StreamConfig): String {

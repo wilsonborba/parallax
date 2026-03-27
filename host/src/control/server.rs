@@ -122,6 +122,14 @@ impl StreamController {
 
         Ok(())
     }
+
+    fn any_running(&self) -> Result<bool, String> {
+        let slots = self
+            .slots
+            .lock()
+            .map_err(|_| "stream lock poisoned".to_string())?;
+        Ok(slots.values().any(|slot| slot.handle.is_some()))
+    }
 }
 
 impl StreamCoordinator for StreamController {
@@ -196,8 +204,10 @@ impl StreamCoordinator for StreamController {
                 .lock()
                 .map_err(|_| "target lock poisoned".to_string())?;
             for (&stream_id, slot) in slots.iter_mut() {
-                slot.target = Some(offset_port(&target, stream_id.saturating_sub(1)));
-                if slot.handle.is_some() {
+                let next_target = offset_port(&target, stream_id.saturating_sub(1));
+                let changed = slot.target.as_deref() != Some(next_target.as_str());
+                slot.target = Some(next_target);
+                if changed && slot.handle.is_some() {
                     to_restart.push(stream_id);
                 }
             }
@@ -472,6 +482,7 @@ fn handle_client(
     client_addr: SocketAddr,
     default_target_port: Option<u16>,
 ) -> Result<(), String> {
+    eprintln!("[control] session opened from {}", client_addr);
     let mut session = Session::new(
         pairing_token,
         stream_controller,
@@ -483,7 +494,10 @@ fn handle_client(
     loop {
         let frame = match read_frame(&mut stream)? {
             Some(frame) => frame,
-            None => return Ok(()),
+            None => {
+                eprintln!("[control] session closed by peer {}", client_addr);
+                return Ok(());
+            }
         };
 
         let responses = session.handle_frame(frame);
@@ -610,9 +624,29 @@ fn run_status_socket(
             .map_err(|err| format!("Failed to create socket directory {parent:?}: {err}"))?;
     }
 
-    // remove stale socket
+    // Refuse to start when another hostd instance is already serving this socket.
+    // Only remove the socket file when connection fails and it is clearly stale.
     if path.exists() {
-        let _ = std::fs::remove_file(&path);
+        match UnixStream::connect(&path) {
+            Ok(_) => {
+                return Err(format!(
+                    "Status socket {path:?} is already active (another prlx-hostd instance is running)"
+                ));
+            }
+            Err(err) => match err.kind() {
+                std::io::ErrorKind::ConnectionRefused
+                | std::io::ErrorKind::NotFound
+                | std::io::ErrorKind::AddrNotAvailable => {
+                    std::fs::remove_file(&path)
+                        .map_err(|rm_err| format!("Failed to remove stale socket {path:?}: {rm_err}"))?;
+                }
+                _ => {
+                    return Err(format!(
+                        "Failed to check existing socket {path:?}: {err}"
+                    ));
+                }
+            },
+        }
     }
 
     let listener = UnixListener::bind(&path)
@@ -665,18 +699,17 @@ fn handle_status_client(
         let line = buffer.trim();
         match line {
             "status" => {
+                sync_status_state_with_streams(&stream_controller, &daemon_status);
                 let status = daemon_status
                     .lock()
                     .map_err(|_| "status lock poisoned".to_string())?;
                 write_status(&mut stream, &status)?;
             }
             "start" => {
-                let result = stream_controller.start_stream(1);
-                if let Ok(mut status) = daemon_status.lock() {
-                    if result.is_ok() {
-                        status.state = DaemonState::Streaming;
-                    }
+                if let Err(err) = stream_controller.start_stream(1) {
+                    eprintln!("Status socket start failed: {err}");
                 }
+                sync_status_state_with_streams(&stream_controller, &daemon_status);
                 let status = daemon_status
                     .lock()
                     .map_err(|_| "status lock poisoned".to_string())?;
@@ -687,24 +720,20 @@ fn handle_status_client(
                     .strip_prefix("start ")
                     .and_then(|v| v.parse::<u32>().ok())
                     .unwrap_or(1);
-                let result = stream_controller.start_stream(stream_id);
-                if let Ok(mut status) = daemon_status.lock() {
-                    if result.is_ok() {
-                        status.state = DaemonState::Streaming;
-                    }
+                if let Err(err) = stream_controller.start_stream(stream_id) {
+                    eprintln!("Status socket start {stream_id} failed: {err}");
                 }
+                sync_status_state_with_streams(&stream_controller, &daemon_status);
                 let status = daemon_status
                     .lock()
                     .map_err(|_| "status lock poisoned".to_string())?;
                 write_status(&mut stream, &status)?;
             }
             "stop" => {
-                let result = stream_controller.stop_stream(1);
-                if let Ok(mut status) = daemon_status.lock() {
-                    if result.is_ok() {
-                        status.state = DaemonState::Connected;
-                    }
+                if let Err(err) = stream_controller.stop_stream(1) {
+                    eprintln!("Status socket stop failed: {err}");
                 }
+                sync_status_state_with_streams(&stream_controller, &daemon_status);
                 let status = daemon_status
                     .lock()
                     .map_err(|_| "status lock poisoned".to_string())?;
@@ -715,12 +744,10 @@ fn handle_status_client(
                     .strip_prefix("stop ")
                     .and_then(|v| v.parse::<u32>().ok())
                     .unwrap_or(1);
-                let result = stream_controller.stop_stream(stream_id);
-                if let Ok(mut status) = daemon_status.lock() {
-                    if result.is_ok() {
-                        status.state = DaemonState::Connected;
-                    }
+                if let Err(err) = stream_controller.stop_stream(stream_id) {
+                    eprintln!("Status socket stop {stream_id} failed: {err}");
                 }
+                sync_status_state_with_streams(&stream_controller, &daemon_status);
                 let status = daemon_status
                     .lock()
                     .map_err(|_| "status lock poisoned".to_string())?;
@@ -731,12 +758,33 @@ fn handle_status_client(
                 write_streams(&mut stream, &payload)?;
             }
             _ => {
+                sync_status_state_with_streams(&stream_controller, &daemon_status);
                 let status = daemon_status
                     .lock()
                     .map_err(|_| "status lock poisoned".to_string())?;
                 write_status(&mut stream, &status)?;
             }
         }
+    }
+}
+
+fn sync_status_state_with_streams(
+    stream_controller: &StreamController,
+    daemon_status: &Arc<Mutex<DaemonStatus>>,
+) {
+    let running = match stream_controller.any_running() {
+        Ok(v) => v,
+        Err(err) => {
+            eprintln!("Failed to inspect running streams: {err}");
+            return;
+        }
+    };
+    if let Ok(mut status) = daemon_status.lock() {
+        status.state = if running {
+            DaemonState::Streaming
+        } else {
+            DaemonState::Connected
+        };
     }
 }
 

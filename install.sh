@@ -5,8 +5,9 @@ REPO_URL="${PARALLAX_REPO_URL:-https://github.com/asodya/parallax.git}"
 REPO_BRANCH="${PARALLAX_REPO_BRANCH:-main}"
 WORK_DIR="${PARALLAX_WORK_DIR:-$HOME/.local/share/parallax-installer}"
 SRC_DIR="$WORK_DIR/src"
-MODE="source"
+MODE="deb"
 RUN_AFTER_INSTALL=0
+SUDO=""
 
 say() {
   printf '[parallax-install] %s\n' "$*"
@@ -26,17 +27,16 @@ usage() {
 Parallax installer (Debian/Ubuntu only)
 
 Usage:
-  bash install.sh [--mode source|deb|cargo] [--run]
+  bash install.sh [--mode deb|cargo|source] [--run]
 
 Modes:
-  source  Clone/update repo and run packaging/install-debian.sh (default).
-  deb     Clone/update repo, build .deb and install with apt.
-  cargo   Clone/update repo, cargo-install binaries, and install launcher/icon.
+  deb     Clone/update repo, build .deb and install with apt (default).
+  cargo   Clone/update repo, cargo-install binaries, and install launcher/icon for current user.
+  source  Alias of deb (kept for backward compatibility).
 
 Examples:
-  curl -fsSL https://raw.githubusercontent.com/asodya/parallax/main/install.sh | bash
-  curl -fsSL https://raw.githubusercontent.com/asodya/parallax/main/install.sh | bash -s -- --mode deb
-  curl -fsSL https://raw.githubusercontent.com/asodya/parallax/main/install.sh | bash -s -- --mode cargo --run
+  curl -fsSL https://parallax.asodya.com/assets/install.sh | bash
+  curl -fsSL https://parallax.asodya.com/assets/install.sh | bash -s -- --mode cargo --run
 
 Environment overrides:
   PARALLAX_REPO_URL
@@ -67,8 +67,8 @@ parse_args() {
   done
 
   case "$MODE" in
-    source|deb|cargo) ;;
-    *) fail "Invalid mode: $MODE (use source, deb, or cargo)." ;;
+    deb|cargo|source) ;;
+    *) fail "Invalid mode: $MODE (use deb, cargo, or source)." ;;
   esac
 }
 
@@ -108,12 +108,12 @@ install_base_apt_deps() {
 sync_repo() {
   mkdir -p "$WORK_DIR"
   if [[ -d "$SRC_DIR/.git" ]]; then
-    say "Atualizando repositório em $SRC_DIR..."
+    say "Updating repository in $SRC_DIR..."
     git -C "$SRC_DIR" fetch origin "$REPO_BRANCH" --depth 1
     git -C "$SRC_DIR" checkout -q "$REPO_BRANCH"
     git -C "$SRC_DIR" reset --hard "origin/$REPO_BRANCH"
   else
-    say "Clonando repositório em $SRC_DIR..."
+    say "Cloning repository into $SRC_DIR..."
     git clone --depth 1 --branch "$REPO_BRANCH" "$REPO_URL" "$SRC_DIR"
   fi
 }
@@ -121,31 +121,48 @@ sync_repo() {
 ensure_repo_layout() {
   local required_file
   case "$MODE" in
-    source) required_file="packaging/install-debian.sh" ;;
-    deb) required_file="packaging/build-deb.sh" ;;
+    deb|source) required_file="packaging/build-deb.sh" ;;
     cargo) required_file="host/Cargo.toml" ;;
     *) fail "Unsupported mode while validating repository layout: $MODE" ;;
   esac
 
-  if [[ -f "$SRC_DIR/$required_file" ]]; then
-    return
-  fi
-
-  fail "Required file not found on branch '$REPO_BRANCH': $required_file"
+  [[ -f "$SRC_DIR/$required_file" ]] || fail "Required file not found on branch '$REPO_BRANCH': $required_file"
 }
 
-install_via_source_script() {
-  say "Executando instalador completo (source mode)..."
-  bash "$SRC_DIR/packaging/install-debian.sh"
+stop_existing_hostd() {
+  if pgrep -x prlx-hostd >/dev/null 2>&1; then
+    say "Stopping existing prlx-hostd processes..."
+    pkill -x prlx-hostd >/dev/null 2>&1 || true
+    sleep 1
+    pkill -9 -x prlx-hostd >/dev/null 2>&1 || true
+  fi
+}
+
+cleanup_legacy_user_install() {
+  local user_bin user_share
+  user_bin="${XDG_BIN_HOME:-$HOME/.local/bin}"
+  user_share="${XDG_DATA_HOME:-$HOME/.local/share}"
+
+  say "Cleaning old user-level Parallax artifacts to avoid version conflicts..."
+  rm -f "$user_bin/parallax"
+  rm -f "$user_share/applications/parallax.desktop"
+  rm -f "$user_share/icons/hicolor/scalable/apps/parallax.svg"
+  rm -rf "$user_share/parallax"
 }
 
 install_via_deb() {
   local arch deb_path
   arch="$(dpkg --print-architecture)"
-  say "Buildando pacote .deb..."
+
+  stop_existing_hostd
+  cleanup_legacy_user_install
+
+  say "Building .deb package..."
   bash "$SRC_DIR/packaging/build-deb.sh"
+
   deb_path="$(ls -t "$SRC_DIR"/dist/parallax-host_*_"$arch".deb 2>/dev/null | head -n 1 || true)"
   [[ -n "$deb_path" ]] || fail ".deb package not found in $SRC_DIR/dist"
+
   say "Installing package: $deb_path"
   $SUDO apt install -y "$deb_path"
 }
@@ -173,6 +190,8 @@ install_via_cargo() {
   desktop_dir="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
   icon_dir="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/scalable/apps"
 
+  stop_existing_hostd
+
   say "Installing build dependencies (apt) for cargo mode..."
   $SUDO apt-get install -y \
     build-essential pkg-config clang libclang-dev \
@@ -183,7 +202,7 @@ install_via_cargo() {
   ensure_rust_for_cargo_mode
   load_cargo_env
 
-  say "Compilando e instalando binários com cargo..."
+  say "Building and installing binaries with cargo..."
   cargo install --path "$SRC_DIR/host" --force --root "$app_home/cargo"
 
   say "Installing launcher and desktop entry for current user..."
@@ -204,7 +223,7 @@ print_result() {
   cmd_hint="parallax"
   say "Installation completed in mode: $MODE"
   printf '\n'
-  printf 'Próximos comandos:\n'
+  printf 'Next commands:\n'
   printf '  %s\n' "$cmd_hint"
   printf '  %s host --help\n' "$cmd_hint"
   printf '  %s doctor\n' "$cmd_hint"
@@ -213,7 +232,7 @@ print_result() {
 
 maybe_run_ui() {
   if [[ "$RUN_AFTER_INSTALL" -eq 1 ]]; then
-    say "Abrindo Parallax UI..."
+    say "Launching Parallax UI..."
     exec parallax
   fi
 }
@@ -226,8 +245,12 @@ main() {
   sync_repo
   ensure_repo_layout
 
+  if [[ "$MODE" == "source" ]]; then
+    say "Mode 'source' is now an alias of 'deb' to keep installs consistent."
+    MODE="deb"
+  fi
+
   case "$MODE" in
-    source) install_via_source_script ;;
     deb) install_via_deb ;;
     cargo) install_via_cargo ;;
   esac

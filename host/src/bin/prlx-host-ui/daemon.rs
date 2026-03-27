@@ -1,7 +1,7 @@
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 use std::time::{Duration, Instant};
@@ -205,7 +205,7 @@ impl DaemonClient {
                     Err(err) => {
                         let _ = self
                             .event_tx
-                            .send(DaemonEvent::Error(format!("Failed to clone socket: {err}")));
+                            .send(DaemonEvent::Error(format!("[UI-DAEMON] Failed to clone socket: {err}")));
                     }
                 }
             }
@@ -218,7 +218,7 @@ impl DaemonClient {
                 self.ensure_daemon_spawn();
                 if err.kind() != std::io::ErrorKind::NotFound || self.socket_path.exists() {
                     if !self.warning_sent {
-                        let msg = format!("Waiting for daemon socket: {err}");
+                        let msg = format!("[UI-DAEMON] Waiting for daemon socket: {err}");
                         let _ = self.event_tx.send(DaemonEvent::Warning(msg));
                         self.warning_sent = true;
                     }
@@ -245,8 +245,12 @@ impl DaemonClient {
             .arg("--control-bind")
             .arg("0.0.0.0:0")
             .env("PRLX_SOCKET_PATH", &self.socket_path)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .spawn()
         {
+            let mut child = child;
+            pipe_child_output(&mut child, self.event_tx.clone());
             CHILD_PID.store(child.id() as i32, Ordering::Relaxed);
             self.last_spawn_success = Some(Instant::now());
             self.spawned_child = Some(child);
@@ -258,8 +262,12 @@ impl DaemonClient {
                 .arg("--control-bind")
                 .arg("0.0.0.0:0")
                 .env("PRLX_SOCKET_PATH", &self.socket_path)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
                 .spawn()
             {
+                let mut child = child;
+                pipe_child_output(&mut child, self.event_tx.clone());
                 CHILD_PID.store(child.id() as i32, Ordering::Relaxed);
                 self.last_spawn_success = Some(Instant::now());
                 self.spawned_child = Some(child);
@@ -321,12 +329,12 @@ impl DaemonClient {
                     self.reader = None;
                     self.status.connected = false;
                     let _ = self.event_tx.send(DaemonEvent::Status(self.status.clone()));
-                    let _ = self
-                        .event_tx
-                        .send(DaemonEvent::Error(format!("Socket error: {err}")));
-                    break;
-                }
+                let _ = self
+                    .event_tx
+                    .send(DaemonEvent::Error(format!("[UI-DAEMON] Socket error: {err}")));
+                break;
             }
+        }
         }
     }
 
@@ -384,7 +392,7 @@ impl DaemonClient {
     fn send_line(&mut self, line: &str, action: &str) -> bool {
         let Some(writer) = self.writer.as_mut() else {
             let _ = self.event_tx.send(DaemonEvent::Error(format!(
-                "Daemon not connected; cannot {action}"
+                "[UI-DAEMON] Daemon not connected; cannot {action}"
             )));
             return false;
         };
@@ -396,7 +404,7 @@ impl DaemonClient {
             self.status.connected = false;
             let _ = self.event_tx.send(DaemonEvent::Status(self.status.clone()));
             let _ = self.event_tx.send(DaemonEvent::Error(format!(
-                "Failed to send {action} command"
+                "[UI-DAEMON] Failed to send {action} command"
             )));
             return false;
         }
@@ -466,4 +474,86 @@ fn discover_local_hostd() -> Option<PathBuf> {
         return Some(candidate);
     }
     None
+}
+
+fn pipe_child_output(child: &mut Child, event_tx: Sender<DaemonEvent>) {
+    if let Some(stdout) = child.stdout.take() {
+        let tx = event_tx.clone();
+        std::thread::spawn(move || {
+            let reader = BufReader::new(stdout);
+            for line in reader.lines().map_while(Result::ok) {
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                let _ = tx.send(DaemonEvent::Warning(format!("[HOSTD][OUT] {trimmed}")));
+            }
+        });
+    }
+
+    if let Some(stderr) = child.stderr.take() {
+        let tx = event_tx;
+        std::thread::spawn(move || {
+            let reader = BufReader::new(stderr);
+            for line in reader.lines().map_while(Result::ok) {
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                let severity = classify_hostd_stderr(trimmed);
+                let tagged = format!("[HOSTD][{severity}] {trimmed}");
+                if severity == "ERROR" {
+                    let _ = tx.send(DaemonEvent::Error(tagged));
+                } else {
+                    let _ = tx.send(DaemonEvent::Warning(tagged));
+                }
+            }
+        });
+    }
+}
+
+fn classify_hostd_stderr(line: &str) -> &'static str {
+    let lower = line.to_ascii_lowercase();
+
+    // Control/session traces are diagnostic, not host faults.
+    if lower.contains("[control]")
+        || lower.contains("[client-log]")
+        || lower.contains("session opened")
+        || lower.contains("session closed")
+        || lower.contains(" rx from ")
+        || lower.contains(" tx to ")
+    {
+        return "DEBUG";
+    }
+
+    if lower.contains("streaming progress")
+        || lower.contains("pipeline ready")
+        || lower.contains("configuring ")
+        || lower.contains("vaapi requested")
+    {
+        return "INFO";
+    }
+
+    if lower.contains("no monitor named")
+        || lower.contains("xshmgetimage failed")
+        || lower.contains("disabling xshm")
+    {
+        return "WARN";
+    }
+
+    if lower.contains("failed")
+        || lower.contains("panic")
+        || lower.contains("error:")
+        || lower.contains("connection refused")
+        || lower.contains("connection reset")
+    {
+        return "ERROR";
+    }
+
+    // ffmpeg/x264 trailer stats on stderr are informational.
+    if lower.contains("[libx264") {
+        return "DEBUG";
+    }
+
+    "INFO"
 }

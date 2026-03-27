@@ -30,6 +30,8 @@ pub enum MessageType {
     AddVirtualDisplay = 0x32,
     RemoveVirtualDisplay = 0x33,
     DisplayOpAck = 0x34,
+    ClientLog = 0x40,
+    ClientLogAck = 0x41,
     Error = 0x7f,
 }
 
@@ -60,6 +62,8 @@ impl TryFrom<u8> for MessageType {
             0x32 => Ok(Self::AddVirtualDisplay),
             0x33 => Ok(Self::RemoveVirtualDisplay),
             0x34 => Ok(Self::DisplayOpAck),
+            0x40 => Ok(Self::ClientLog),
+            0x41 => Ok(Self::ClientLogAck),
             0x7f => Ok(Self::Error),
             other => Err(format!("Unknown message type: {other}")),
         }

@@ -14,6 +14,7 @@ use crate::qr::qr_to_image;
 use crate::widgets::{
     accent_button, daemon_label, ghost_button, info_row, lerp_color, primary_button, status_chip,
 };
+use std::collections::VecDeque;
 
 // Layout constants (tune here)
 const CARD_GAP: f32 = 18.0;
@@ -31,6 +32,12 @@ pub(crate) struct HostUiApp {
     shutdown_initiated: bool,
     dark_mode: bool,
     visuals_mode: Option<bool>,
+    show_logs_window: bool,
+    logs: VecDeque<String>,
+    show_debug_logs: bool,
+    show_info_logs: bool,
+    show_warn_logs: bool,
+    show_error_logs: bool,
 }
 
 impl HostUiApp {
@@ -55,11 +62,26 @@ impl HostUiApp {
             shutdown_initiated: false,
             dark_mode: false,
             visuals_mode: None,
+            show_logs_window: false,
+            logs: VecDeque::with_capacity(MAX_LOG_LINES),
+            show_debug_logs: true,
+            show_info_logs: true,
+            show_warn_logs: true,
+            show_error_logs: true,
         };
 
+        app.push_log("UI", "INFO", "Host UI initialized");
         app.refresh_qr_texture(&cc.egui_ctx);
         app.daemon.send(DaemonCommand::Refresh);
         app
+    }
+
+    fn push_log(&mut self, source: &str, level: &str, message: impl Into<String>) {
+        let line = format!("[{source}][{level}] {}", message.into());
+        if self.logs.len() >= MAX_LOG_LINES {
+            self.logs.pop_front();
+        }
+        self.logs.push_back(line);
     }
 
     fn apply_visuals_if_needed(&mut self, ctx: &egui::Context, palette: &UiPalette) {
@@ -150,6 +172,7 @@ impl eframe::App for HostUiApp {
             match event {
                 DaemonEvent::Status(status) => {
                     self.status = status;
+                    self.push_log("UI", "DEBUG", format!("Status update: {:?}", self.status.state));
                     if self.status.connected {
                         // Clear stale connect errors once the daemon is reachable.
                         self.last_error = None;
@@ -157,10 +180,18 @@ impl eframe::App for HostUiApp {
                     self.last_warning = None;
                 }
                 DaemonEvent::Error(err) => {
-                    self.last_error = Some(err);
+                    let (source, level, message) = classify_log_entry(&err, "ERROR");
+                    self.push_log(source, level, message);
+                    if level == "ERROR" {
+                        self.last_error = Some(err);
+                    }
                 }
                 DaemonEvent::Warning(warning) => {
-                    self.last_warning = Some(warning);
+                    let (source, level, message) = classify_log_entry(&warning, "WARN");
+                    self.push_log(source, level, message);
+                    if level == "WARN" {
+                        self.last_warning = Some(warning);
+                    }
                 }
             }
         }
@@ -204,6 +235,10 @@ impl eframe::App for HostUiApp {
                             &mut self.dark_mode,
                             RichText::new("Dark").size(12.0).color(palette.subtle_text),
                         ));
+
+                        if ui.button("Logs").clicked() {
+                            self.show_logs_window = !self.show_logs_window;
+                        }
                     });
                 });
 
@@ -266,6 +301,7 @@ impl eframe::App for HostUiApp {
                             );
                             if start.clicked() {
                                 loggins::info("ui", "Start clicked");
+                                self.push_log("UI", "INFO", "Start clicked");
                                 self.daemon.send(DaemonCommand::StartStream);
                             }
 
@@ -275,11 +311,13 @@ impl eframe::App for HostUiApp {
                             );
                             if stop.clicked() {
                                 loggins::info("ui", "Stop clicked");
+                                self.push_log("UI", "INFO", "Stop clicked");
                                 self.daemon.send(DaemonCommand::StopStream);
                             }
 
                             if ui.add(ghost_button("↻ Refresh", &palette)).clicked() {
                                 loggins::info("ui", "Refresh clicked");
+                                self.push_log("UI", "DEBUG", "Refresh clicked");
                                 self.daemon.send(DaemonCommand::Refresh);
                             }
                         });
@@ -390,6 +428,52 @@ impl eframe::App for HostUiApp {
                 ui.add_space(OUTER_MARGIN);
             });
 
+        if self.show_logs_window {
+            egui::Window::new("Parallax Debug Log")
+                .open(&mut self.show_logs_window)
+                .resizable(true)
+                .vscroll(true)
+                .default_size([720.0, 420.0])
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        if ui.button("Copy logs").clicked() {
+                            let joined = self
+                                .logs
+                                .iter()
+                                .map(String::as_str)
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            ui.ctx().copy_text(joined);
+                        }
+                        if ui.button("Clear").clicked() {
+                            self.logs.clear();
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut self.show_debug_logs, "DEBUG");
+                        ui.checkbox(&mut self.show_info_logs, "INFO");
+                        ui.checkbox(&mut self.show_warn_logs, "WARN");
+                        ui.checkbox(&mut self.show_error_logs, "ERROR");
+                    });
+                    ui.separator();
+                    for line in self.logs.iter() {
+                        if let Some(level) = extract_level(line) {
+                            let visible = match level {
+                                "DEBUG" => self.show_debug_logs,
+                                "INFO" => self.show_info_logs,
+                                "WARN" => self.show_warn_logs,
+                                "ERROR" => self.show_error_logs,
+                                _ => true,
+                            };
+                            if !visible {
+                                continue;
+                            }
+                        }
+                        ui.label(RichText::new(line).monospace().size(12.0));
+                    }
+                });
+        }
+
         if self.show_qr_overlay && self.qr_texture.is_none() {
             self.show_qr_overlay = false;
         }
@@ -457,6 +541,45 @@ impl eframe::App for HostUiApp {
 
         ctx.request_repaint_after(Duration::from_millis(200));
     }
+}
+
+const MAX_LOG_LINES: usize = 400;
+
+fn classify_log_entry(raw: &str, default_level: &'static str) -> (&'static str, &'static str, String) {
+    if let Some(rest) = raw.strip_prefix("[HOSTD][") {
+        if let Some((level, msg)) = rest.split_once("] ") {
+            let level = normalize_level(level);
+            return ("HOSTD", level, msg.to_string());
+        }
+    }
+    if let Some(rest) = raw.strip_prefix("[UI-DAEMON] ") {
+        return ("UI-DAEMON", default_level, rest.to_string());
+    }
+    if let Some(rest) = raw.strip_prefix("[HOSTD][OUT] ") {
+        return ("HOSTD", "INFO", rest.to_string());
+    }
+    if let Some(rest) = raw.strip_prefix("[HOSTD][ERR] ") {
+        return ("HOSTD", default_level, rest.to_string());
+    }
+    ("UI", default_level, raw.to_string())
+}
+
+fn normalize_level(level: &str) -> &'static str {
+    match level {
+        "DEBUG" => "DEBUG",
+        "INFO" => "INFO",
+        "WARN" => "WARN",
+        "ERROR" => "ERROR",
+        _ => "INFO",
+    }
+}
+
+fn extract_level(line: &str) -> Option<&str> {
+    // Expected format: [SOURCE][LEVEL] ...
+    let after_source = line.strip_prefix('[')?.split_once("]")?.1;
+    let rest = after_source.strip_prefix('[')?;
+    let (level, _) = rest.split_once(']')?;
+    Some(level)
 }
 
 impl Drop for HostUiApp {

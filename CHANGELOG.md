@@ -16,6 +16,7 @@
 - *(deploy)* Implemented install process for curl
 - *(deploy)* Implemented install process for curl to query on main
 - *(deploy)* Implemented install process for curl to query on main
+- *(deploy)* Implemented open two screen
 ## [0.0.1] - 2026-02-07
 
 ### 🚀 Features

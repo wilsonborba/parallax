@@ -85,12 +85,12 @@ class StreamViewModel(
         _uiEvents.tryEmit(StreamUiEvent.ShowMessage(buildQrSuccessMessage(endpoint)))
     }
 
-    fun onSurfaceAvailable(surface: Surface) {
-        streamSessionService.setRenderSurface(surface)
+    fun onSurfaceAvailable(streamId: Int, surface: Surface) {
+        streamSessionService.setRenderSurface(streamId, surface)
     }
 
-    fun onSurfaceDestroyed() {
-        streamSessionService.clearRenderSurface()
+    fun onSurfaceDestroyed(streamId: Int) {
+        streamSessionService.clearRenderSurface(streamId)
     }
 
     fun onAddMonitorClicked() {
