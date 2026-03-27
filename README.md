@@ -48,7 +48,7 @@ curl -fsSL https://raw.githubusercontent.com/asodya/parallax/main/install.sh | b
 When you publish the website on Cloudflare Pages with Flutter's default build output, the installer is available at:
 
 ```bash
-curl -fsSL https://parallax.asodya.com/assets/assets/install.sh | bash
+curl -fsSL https://parallax.asodya.com/assets/install.sh | bash
 ```
 
 Modes:
