@@ -16,4 +16,4 @@ Use these values in the Pages project:
 
 The installer script is shipped as a Flutter web asset:
 
-- `https://parallax.asodya.com/assets/assets/install.sh`
+- `https://parallax.asodya.com/assets/install.sh`

@@ -151,9 +151,9 @@ class LocalLandingRepository implements LandingRepository {
         CodeSample(
           title: 'Cloudflare Pages installer URL',
           command:
-              'curl -fsSL https://parallax.asodya.com/assets/assets/install.sh | bash',
+              'curl -fsSL https://parallax.asodya.com/assets/install.sh | bash',
           caption:
-              'Installer published as a Flutter web asset from page/assets/install.sh.',
+              'Installer published as a Flutter web asset from page/install.sh.',
         ),
         CodeSample(
           title: 'Cargo install flow',
