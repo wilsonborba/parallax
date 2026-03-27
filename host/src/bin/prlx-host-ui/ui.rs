@@ -150,6 +150,10 @@ impl eframe::App for HostUiApp {
             match event {
                 DaemonEvent::Status(status) => {
                     self.status = status;
+                    if self.status.connected {
+                        // Clear stale connect errors once the daemon is reachable.
+                        self.last_error = None;
+                    }
                     self.last_warning = None;
                 }
                 DaemonEvent::Error(err) => {

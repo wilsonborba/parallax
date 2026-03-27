@@ -218,8 +218,8 @@ impl DaemonClient {
                 self.ensure_daemon_spawn();
                 if err.kind() != std::io::ErrorKind::NotFound || self.socket_path.exists() {
                     if !self.warning_sent {
-                        let msg = format!("Failed to connect: {err}");
-                        let _ = self.event_tx.send(DaemonEvent::Error(msg));
+                        let msg = format!("Waiting for daemon socket: {err}");
+                        let _ = self.event_tx.send(DaemonEvent::Warning(msg));
                         self.warning_sent = true;
                     }
                 }
