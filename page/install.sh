@@ -118,6 +118,22 @@ sync_repo() {
   fi
 }
 
+ensure_repo_layout() {
+  local required_file
+  case "$MODE" in
+    source) required_file="packaging/install-debian.sh" ;;
+    deb) required_file="packaging/build-deb.sh" ;;
+    cargo) required_file="host/Cargo.toml" ;;
+    *) fail "Unsupported mode while validating repository layout: $MODE" ;;
+  esac
+
+  if [[ -f "$SRC_DIR/$required_file" ]]; then
+    return
+  fi
+
+  fail "Required file not found on branch '$REPO_BRANCH': $required_file"
+}
+
 install_via_source_script() {
   say "Executando instalador completo (source mode)..."
   bash "$SRC_DIR/packaging/install-debian.sh"
@@ -208,6 +224,7 @@ main() {
   resolve_sudo
   install_base_apt_deps
   sync_repo
+  ensure_repo_layout
 
   case "$MODE" in
     source) install_via_source_script ;;

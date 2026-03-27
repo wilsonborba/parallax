@@ -125,8 +125,8 @@ class HeroSection extends StatelessWidget {
                   Text(
                     'Parallax',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ],
               ),
@@ -161,42 +161,57 @@ class HeroSection extends StatelessWidget {
                     ],
                   ),
                   style: Theme.of(context).textTheme.displayLarge?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -1.2,
-                      ),
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -1.2,
+                  ),
                 ),
                 const SizedBox(height: 24),
                 Text(
                   data.headline,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        height: 1.2,
-                      ),
+                    fontWeight: FontWeight.w700,
+                    height: 1.2,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Text(
                   data.subHeadline,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: Colors.white70,
-                        height: 1.6,
-                      ),
+                    color: Colors.white70,
+                    height: 1.6,
+                  ),
                 ),
                 const SizedBox(height: 32),
+                Text(
+                  'Install options',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 14),
                 Wrap(
-                  spacing: 16,
-                  runSpacing: 12,
+                  spacing: 14,
+                  runSpacing: 14,
                   alignment: WrapAlignment.center,
-                  children: [
-                    NeonButton(
-                      label: data.primaryCta,
-                      onPressed: () => _openGithub(context),
+                  children: const [
+                    _HeroInstallCard(
+                      title: 'One command (curl + bash)',
+                      command:
+                          'curl -fsSL https://parallax.asodya.com/assets/install.sh | bash',
                     ),
-                    NeonButton(
-                      label: data.secondaryCta,
-                      onPressed: () => _openGithub(context),
-                      isPrimary: false,
+                    _HeroInstallCard(
+                      title: 'Cargo flow',
+                      command:
+                          'cargo install --path host\n./packaging/install-debian.sh',
+                    ),
+                    _HeroInstallCard(
+                      title: 'Repository flow',
+                      command:
+                          'git clone https://github.com/asodya/parallax.git\ncd parallax\n./packaging/install-debian.sh',
                     ),
                   ],
                 ),
@@ -204,13 +219,16 @@ class HeroSection extends StatelessWidget {
                 Text(
                   data.microText,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Colors.white54,
-                        letterSpacing: 0.4,
-                      ),
+                    color: Colors.white54,
+                    letterSpacing: 0.4,
+                  ),
                 ),
                 const SizedBox(height: 60),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 16,
+                  ),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(24),
                     border: Border.all(color: Colors.white10),
@@ -223,9 +241,9 @@ class HeroSection extends StatelessWidget {
                       const SizedBox(width: 12),
                       Text(
                         'Ultra-low latency signal path with adaptive UDP framing',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Colors.white70,
-                            ),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
                       ),
                     ],
                   ),
@@ -246,15 +264,72 @@ class HeroSection extends StatelessWidget {
                   child: Text(
                     'Latency · Fidelity · Immersion',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: Colors.white70,
-                          letterSpacing: 2,
-                        ),
+                      color: Colors.white70,
+                      letterSpacing: 2,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _HeroInstallCard extends StatelessWidget {
+  const _HeroInstallCard({required this.title, required this.command});
+
+  final String title;
+  final String command;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 280,
+      child: GlowCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => _copyCommand(context, command),
+                  icon: const Icon(Icons.copy, size: 18),
+                  tooltip: 'Copy command',
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: Text(
+                command,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  fontFamily: 'monospace',
+                  color: Colors.white70,
+                  height: 1.45,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -287,10 +362,8 @@ class AboutSection extends StatelessWidget {
                         Flexible(
                           child: Text(
                             detail,
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  color: Colors.white70,
-                                  height: 1.4,
-                                ),
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: Colors.white70, height: 1.4),
                           ),
                         ),
                       ],
@@ -308,8 +381,8 @@ class AboutSection extends StatelessWidget {
                 Text(
                   'Experimental pipeline diagram',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 SizedBox(
@@ -362,11 +435,17 @@ class ArchitectureSection extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: _ArchitectureColumn(title: 'Linux Host (Rust)', nodes: data.hostNodes),
+                child: _ArchitectureColumn(
+                  title: 'Linux Host (Rust)',
+                  nodes: data.hostNodes,
+                ),
               ),
               const SizedBox(width: 24),
               Expanded(
-                child: _ArchitectureColumn(title: 'Android Client', nodes: data.clientNodes),
+                child: _ArchitectureColumn(
+                  title: 'Android Client',
+                  nodes: data.clientNodes,
+                ),
               ),
             ],
           ),
@@ -409,13 +488,18 @@ class FeaturesSection extends StatelessWidget {
         children: [
           SectionHeader(
             title: 'Core features',
-            subtitle: 'High-performance streaming primitives designed for VR latency budgets.',
+            subtitle:
+                'High-performance streaming primitives designed for VR latency budgets.',
           ),
           const SizedBox(height: 28),
           LayoutBuilder(
             builder: (context, constraints) {
               final width = constraints.maxWidth;
-              final crossAxisCount = width > 1000 ? 3 : width > 700 ? 2 : 1;
+              final crossAxisCount = width > 1000
+                  ? 3
+                  : width > 700
+                  ? 2
+                  : 1;
               return Wrap(
                 spacing: 20,
                 runSpacing: 20,
@@ -428,18 +512,21 @@ class FeaturesSection extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(item.icon, style: const TextStyle(fontSize: 28)),
+                              Text(
+                                item.icon,
+                                style: const TextStyle(fontSize: 28),
+                              ),
                               const SizedBox(height: 16),
                               Text(
                                 item.title,
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.w600),
                               ),
                               const SizedBox(height: 8),
                               Text(
                                 item.description,
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(
                                       color: Colors.white70,
                                       height: 1.5,
                                     ),
@@ -480,7 +567,8 @@ class _HowItWorksSectionState extends State<HowItWorksSection> {
         children: [
           SectionHeader(
             title: 'How it works',
-            subtitle: 'Follow the end-to-end flow from Linux capture to immersive playback.',
+            subtitle:
+                'Follow the end-to-end flow from Linux capture to immersive playback.',
           ),
           const SizedBox(height: 24),
           Wrap(
@@ -488,15 +576,18 @@ class _HowItWorksSectionState extends State<HowItWorksSection> {
             runSpacing: 12,
             children: widget.steps.asMap().entries.map((entry) {
               final index = entry.key;
-              final step = entry.value;
               final isSelected = index == _selectedIndex;
               return ChoiceChip(
                 label: Text('Step ${index + 1}'),
                 selected: isSelected,
                 onSelected: (_) => setState(() => _selectedIndex = index),
-                selectedColor: Theme.of(context).colorScheme.primary.withOpacity(0.4),
+                selectedColor: Theme.of(
+                  context,
+                ).colorScheme.primary.withOpacity(0.4),
                 backgroundColor: Colors.white10,
-                labelStyle: TextStyle(color: isSelected ? Colors.white : Colors.white70),
+                labelStyle: TextStyle(
+                  color: isSelected ? Colors.white : Colors.white70,
+                ),
               );
             }).toList(),
           ),
@@ -519,7 +610,10 @@ class _HowItWorksSectionState extends State<HowItWorksSection> {
                   child: Center(
                     child: Text(
                       '${_selectedIndex + 1}',
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),
@@ -530,17 +624,16 @@ class _HowItWorksSectionState extends State<HowItWorksSection> {
                     children: [
                       Text(
                         selected.title,
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
                       ),
                       const SizedBox(height: 8),
                       Text(
                         selected.description,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Colors.white70,
-                              height: 1.5,
-                            ),
+                          color: Colors.white70,
+                          height: 1.5,
+                        ),
                       ),
                     ],
                   ),
@@ -570,7 +663,8 @@ class GettingStartedSection extends StatelessWidget {
             children: [
               SectionHeader(
                 title: 'Getting started',
-                subtitle: 'Developer-friendly setup commands with instant copy actions.',
+                subtitle:
+                    'Developer-friendly setup commands with instant copy actions.',
               ),
               const SizedBox(height: 24),
               Wrap(
@@ -585,16 +679,19 @@ class GettingStartedSection extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 children: [
                                   Text(
                                     sample.title,
-                                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                          fontWeight: FontWeight.w600,
-                                        ),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(fontWeight: FontWeight.w600),
                                   ),
                                   IconButton(
-                                    onPressed: () => _copyCommand(context, sample.command),
+                                    onPressed: () =>
+                                        _copyCommand(context, sample.command),
                                     icon: const Icon(Icons.copy, size: 18),
                                     tooltip: 'Copy command',
                                   ),
@@ -610,7 +707,8 @@ class GettingStartedSection extends StatelessWidget {
                                 ),
                                 child: Text(
                                   sample.command,
-                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
                                         fontFamily: 'monospace',
                                         color: Colors.white70,
                                         height: 1.5,
@@ -620,9 +718,8 @@ class GettingStartedSection extends StatelessWidget {
                               const SizedBox(height: 12),
                               Text(
                                 sample.caption,
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: Colors.white60,
-                                    ),
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: Colors.white60),
                               ),
                             ],
                           ),
@@ -634,7 +731,9 @@ class GettingStartedSection extends StatelessWidget {
               const SizedBox(height: 12),
               Text(
                 'Scan the QR code from the host UI and connect from your Android device.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.white70),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
               ),
             ],
           );
@@ -664,8 +763,8 @@ class ProtocolSection extends StatelessWidget {
                 Text(
                   'Packet format highlights',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 ...data.highlights.map(
@@ -674,15 +773,17 @@ class ProtocolSection extends StatelessWidget {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.fiber_manual_record, size: 10, color: Colors.white54),
+                        const Icon(
+                          Icons.fiber_manual_record,
+                          size: 10,
+                          color: Colors.white54,
+                        ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
                             item,
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  color: Colors.white70,
-                                  height: 1.4,
-                                ),
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: Colors.white70, height: 1.4),
                           ),
                         ),
                       ],
@@ -692,9 +793,9 @@ class ProtocolSection extends StatelessWidget {
                 const SizedBox(height: 16),
                 Text(
                   'Payload notes',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 8),
                 ...data.payloadNotes.map(
@@ -702,9 +803,9 @@ class ProtocolSection extends StatelessWidget {
                     padding: const EdgeInsets.only(bottom: 6),
                     child: Text(
                       item,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Colors.white60,
-                          ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: Colors.white60),
                     ),
                   ),
                 ),
@@ -718,9 +819,9 @@ class ProtocolSection extends StatelessWidget {
                       padding: const EdgeInsets.only(bottom: 12),
                       child: Text(
                         'See proto/README.md for the full header layout, flag definitions, and MTU guidance.',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Colors.white60,
-                            ),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall?.copyWith(color: Colors.white60),
                       ),
                     ),
                   ],
@@ -745,7 +846,10 @@ class RoadmapSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SectionHeader(title: data.title, subtitle: data.statusLines.join(' ')),
+          SectionHeader(
+            title: data.title,
+            subtitle: data.statusLines.join(' '),
+          ),
           const SizedBox(height: 24),
           Wrap(
             spacing: 20,
@@ -761,17 +865,14 @@ class RoadmapSection extends StatelessWidget {
                         children: [
                           Text(
                             item.title,
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w600),
                           ),
                           const SizedBox(height: 8),
                           Text(
                             item.description,
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  color: Colors.white70,
-                                  height: 1.4,
-                                ),
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: Colors.white70, height: 1.4),
                           ),
                         ],
                       ),
@@ -834,17 +935,17 @@ class FinalCtaSection extends StatelessWidget {
             Text(
               data.headline,
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 12),
             Text(
               data.subHeadline,
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: Colors.white70,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyLarge?.copyWith(color: Colors.white70),
             ),
             const SizedBox(height: 24),
             Wrap(
@@ -948,7 +1049,9 @@ class _DiagramNode extends StatelessWidget {
         const SizedBox(height: 8),
         Text(
           label,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.white70),
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: Colors.white70),
         ),
       ],
     );
@@ -969,9 +1072,9 @@ class _ArchitectureColumn extends StatelessWidget {
         children: [
           Text(
             title,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 12),
           ...nodes.map(
@@ -981,7 +1084,11 @@ class _ArchitectureColumn extends StatelessWidget {
                 message: node.tooltip,
                 child: Row(
                   children: [
-                    const Icon(Icons.hexagon, size: 18, color: Color(0xFFB86CFF)),
+                    const Icon(
+                      Icons.hexagon,
+                      size: 18,
+                      color: Color(0xFFB86CFF),
+                    ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -989,15 +1096,13 @@ class _ArchitectureColumn extends StatelessWidget {
                         children: [
                           Text(
                             node.title,
-                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
+                            style: Theme.of(context).textTheme.bodyLarge
+                                ?.copyWith(fontWeight: FontWeight.w600),
                           ),
                           Text(
                             node.subtitle,
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: Colors.white60,
-                                ),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: Colors.white60),
                           ),
                         ],
                       ),
@@ -1014,7 +1119,11 @@ class _ArchitectureColumn extends StatelessWidget {
 }
 
 class SectionWrapper extends StatefulWidget {
-  const SectionWrapper({super.key, required this.child, required this.scrollOffset});
+  const SectionWrapper({
+    super.key,
+    required this.child,
+    required this.scrollOffset,
+  });
 
   final Widget child;
   final ValueListenable<double> scrollOffset;
@@ -1094,7 +1203,7 @@ void _copyCommand(BuildContext context, String value) {
   _showToast(context, 'Command copied to clipboard.');
 }
 
-const _githubUrl = 'https://github.com/wilsonborba/parallax';
+const _githubUrl = 'https://github.com/asodya/parallax';
 
 Future<void> _openGithub(BuildContext context) async {
   final uri = Uri.parse(_githubUrl);
