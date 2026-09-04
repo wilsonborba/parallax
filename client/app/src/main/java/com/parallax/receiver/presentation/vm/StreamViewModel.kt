@@ -27,6 +27,7 @@ class StreamViewModel(
     private val setScale: SetScaleUseCase,
     private val setViewMode: SetViewModeUseCase,
     private val setStreamEndpoint: SetStreamEndpointUseCase,
+    private val windowStreamId: Int = 1,
     private val logger: Logger = LoggerProvider.logger,
 ) : ViewModel() {
     val uiState: StateFlow<UiState> = streamSessionService.uiState
@@ -34,6 +35,8 @@ class StreamViewModel(
     val uiEvents: SharedFlow<StreamUiEvent> = _uiEvents.asSharedFlow()
     private var lastStatus: StreamState.Status? = null
     private var lastTopologyStatus: String? = null
+    private val openedMonitorWindows = mutableSetOf<Int>()
+    private var secondaryWindowWasRunning = false
 
     init {
         observeStateTransitions()
@@ -140,6 +143,36 @@ class StreamViewModel(
                     _uiEvents.tryEmit(StreamUiEvent.ShowMessage(state.topologyStatus))
                     lastTopologyStatus = state.topologyStatus
                 }
+                if (windowStreamId == 1) {
+                    val activeExtraStreams = state.monitorPanels
+                        .asSequence()
+                        // Open a dedicated window as soon as a virtual monitor exists.
+                        // Some hosts can report delayed/unstable "running" state during topology sync.
+                        .filter { it.streamId > 1 }
+                        .map { it.streamId }
+                        .toSet()
+                    activeExtraStreams.forEach { streamId ->
+                        if (openedMonitorWindows.add(streamId)) {
+                            logger.info(
+                                TAG,
+                                "Emitting OpenMonitorWindow",
+                                mapOf("streamId" to streamId),
+                            )
+                            _uiEvents.tryEmit(StreamUiEvent.OpenMonitorWindow(streamId))
+                        }
+                    }
+                    openedMonitorWindows.removeAll { it !in activeExtraStreams }
+                } else {
+                    val panel = state.monitorPanels.firstOrNull { it.streamId == windowStreamId }
+                    val running = panel?.running == true
+                    if (running) {
+                        secondaryWindowWasRunning = true
+                    }
+                    if (secondaryWindowWasRunning && !running) {
+                        _uiEvents.tryEmit(StreamUiEvent.CloseWindow)
+                        secondaryWindowWasRunning = false
+                    }
+                }
             }
         }
     }
@@ -165,4 +198,6 @@ class StreamViewModel(
 
 sealed interface StreamUiEvent {
     data class ShowMessage(val message: String) : StreamUiEvent
+    data class OpenMonitorWindow(val streamId: Int) : StreamUiEvent
+    data object CloseWindow : StreamUiEvent
 }

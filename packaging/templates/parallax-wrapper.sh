@@ -19,7 +19,7 @@ USAGE
 cmd="${1:-ui}"
 case "$cmd" in
   ui)
-    if [[ "${PARALLAX_UI_RESTART_DAEMON:-1}" == "1" ]]; then
+    if [[ "${PARALLAX_UI_RESTART_DAEMON:-0}" == "1" ]]; then
       pkill -x prlx-hostd >/dev/null 2>&1 || true
     fi
     exec "$BIN_DIR/prlx-host-ui"

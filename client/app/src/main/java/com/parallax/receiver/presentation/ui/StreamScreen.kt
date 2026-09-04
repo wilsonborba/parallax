@@ -112,7 +112,10 @@ private enum class ViewScaleMode(val storedValue: String) {
 @Composable
 fun StreamScreen(
     uiState: UiState,
+    windowStreamId: Int,
     uiEvents: Flow<StreamUiEvent>,
+    onOpenMonitorWindow: (Int) -> Unit,
+    onCloseWindowRequested: () -> Unit,
     onStartClicked: () -> Unit,
     onStopClicked: () -> Unit,
     onScaleChanged: (Float) -> Unit,
@@ -145,8 +148,18 @@ fun StreamScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(uiEvents) {
         uiEvents.collect { event ->
-            if (event is StreamUiEvent.ShowMessage) {
-                snackbarHostState.showSnackbar(event.message)
+            when (event) {
+                is StreamUiEvent.ShowMessage -> snackbarHostState.showSnackbar(event.message)
+                is StreamUiEvent.OpenMonitorWindow -> {
+                    if (windowStreamId == 1) {
+                        onOpenMonitorWindow(event.streamId)
+                    }
+                }
+                StreamUiEvent.CloseWindow -> {
+                    if (windowStreamId > 1) {
+                        onCloseWindowRequested()
+                    }
+                }
             }
         }
     }
@@ -163,7 +176,15 @@ fun StreamScreen(
             tonalElevation = 0.dp,
         ) {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                val videoDimensions = uiState.videoDimensions
+                val panelDimensions = if (windowStreamId == 1) {
+                    null
+                } else {
+                    uiState.monitorPanels
+                        .firstOrNull { it.streamId == windowStreamId }
+                        ?.let { VideoDimensions(it.width, it.height) }
+                }
+                val videoDimensions = panelDimensions
+                    ?: uiState.videoDimensions
                     ?: VideoDimensions(DEFAULT_REMOTE_WIDTH, DEFAULT_REMOTE_HEIGHT)
                 val aspectRatio = videoDimensions.width.toFloat() / videoDimensions.height.toFloat()
                 var baseWidth = maxWidth
@@ -180,26 +201,6 @@ fun StreamScreen(
                     ViewScaleMode.Fit -> 1f
                     ViewScaleMode.Fill -> fillScale
                     ViewScaleMode.Manual -> uiState.config.scale
-                }
-                val renderedPanels = remember(uiState.monitorPanels, videoDimensions) {
-                    val virtualPanels = uiState.monitorPanels
-                        .filter { it.running }
-                        .sortedBy { it.x }
-                        .filter { it.streamId != 1 }
-                        .map {
-                            RenderedPanel(
-                                streamId = it.streamId,
-                                width = it.width.coerceAtLeast(1),
-                                height = it.height.coerceAtLeast(1),
-                            )
-                        }
-                    listOf(
-                        RenderedPanel(
-                            streamId = 1,
-                            width = videoDimensions.width.coerceAtLeast(1),
-                            height = videoDimensions.height.coerceAtLeast(1),
-                        ),
-                    ) + virtualPanels
                 }
                 if (!autoFitApplied) {
                     onScaleChanged(1f)
@@ -221,10 +222,12 @@ fun StreamScreen(
                     !settingsHandleVisible &&
                     status != StreamState.Status.Streaming
                 Box(modifier = Modifier.fillMaxSize()) {
-                    VideoGridArea(
-                        panels = renderedPanels,
+                    VideoArea(
+                        streamId = windowStreamId,
                         baseWidth = baseWidth,
                         baseHeight = baseHeight,
+                        width = videoDimensions.width.coerceAtLeast(1),
+                        height = videoDimensions.height.coerceAtLeast(1),
                         scale = effectiveScale,
                         onSurfaceAvailable = onSurfaceAvailable,
                         onSurfaceDestroyed = onSurfaceDestroyed,
@@ -290,6 +293,7 @@ fun StreamScreen(
                             onRefreshTopologyClicked = onRefreshTopologyClicked,
                             onStartMonitorClicked = onStartMonitorClicked,
                             onStopMonitorClicked = onStopMonitorClicked,
+                            showMonitorControls = windowStreamId == 1,
                             statsEnabled = statsEnabled,
                             onStatsVisibilityChanged = { enabled ->
                                 statsEnabled = enabled
@@ -330,6 +334,7 @@ private fun ControlsPanel(
     onRefreshTopologyClicked: () -> Unit,
     onStartMonitorClicked: (String) -> Unit,
     onStopMonitorClicked: (String) -> Unit,
+    showMonitorControls: Boolean,
     statsEnabled: Boolean,
     onStatsVisibilityChanged: (Boolean) -> Unit,
     onClose: () -> Unit,
@@ -397,31 +402,39 @@ private fun ControlsPanel(
                     Text("Hide")
                 }
             }
-            ConnectionSettings(
-                host = uiState.config.host,
-                streamPort = uiState.config.streamPort,
-                controlPort = uiState.controlPort,
-                accessPin = uiState.config.accessPin,
-                enabled = status == StreamState.Status.Idle || status == StreamState.Status.Error,
-                onHostChanged = onHostChanged,
-                onStreamPortChanged = onStreamPortChanged,
-                onControlPortChanged = onControlPortChanged,
-                onAccessPinChanged = onAccessPinChanged,
-                onScanQrClicked = {
-                    if (cameraPermissionGranted.value) {
-                        showScanner = true
-                    } else {
-                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                    }
-                },
-            )
-            StreamActions(
-                status = status,
-                receiverRunning = uiState.receiverRunning,
-                errorMessage = uiState.streamState.message,
-                onStartClicked = onStartClicked,
-                onStopClicked = onStopClicked,
-            )
+            if (showMonitorControls) {
+                ConnectionSettings(
+                    host = uiState.config.host,
+                    streamPort = uiState.config.streamPort,
+                    controlPort = uiState.controlPort,
+                    accessPin = uiState.config.accessPin,
+                    enabled = status == StreamState.Status.Idle || status == StreamState.Status.Error,
+                    onHostChanged = onHostChanged,
+                    onStreamPortChanged = onStreamPortChanged,
+                    onControlPortChanged = onControlPortChanged,
+                    onAccessPinChanged = onAccessPinChanged,
+                    onScanQrClicked = {
+                        if (cameraPermissionGranted.value) {
+                            showScanner = true
+                        } else {
+                            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                        }
+                    },
+                )
+                StreamActions(
+                    status = status,
+                    receiverRunning = uiState.receiverRunning,
+                    errorMessage = uiState.streamState.message,
+                    onStartClicked = onStartClicked,
+                    onStopClicked = onStopClicked,
+                )
+            } else {
+                Text(
+                    text = "Secondary monitor window (read-only).",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(spacing.small),
                 verticalAlignment = Alignment.CenterVertically,
@@ -435,15 +448,17 @@ private fun ControlsPanel(
                     Text(if (statsEnabled) "On" else "Off")
                 }
             }
-            MonitorControls(
-                monitorPanels = uiState.monitorPanels,
-                topologyBusy = uiState.topologyBusy,
-                onAddMonitorClicked = onAddMonitorClicked,
-                onRemoveMonitorClicked = onRemoveMonitorClicked,
-                onRefreshTopologyClicked = onRefreshTopologyClicked,
-                onStartMonitorClicked = onStartMonitorClicked,
-                onStopMonitorClicked = onStopMonitorClicked,
-            )
+            if (showMonitorControls) {
+                MonitorControls(
+                    monitorPanels = uiState.monitorPanels,
+                    topologyBusy = uiState.topologyBusy,
+                    onAddMonitorClicked = onAddMonitorClicked,
+                    onRemoveMonitorClicked = onRemoveMonitorClicked,
+                    onRefreshTopologyClicked = onRefreshTopologyClicked,
+                    onStartMonitorClicked = onStartMonitorClicked,
+                    onStopMonitorClicked = onStopMonitorClicked,
+                )
+            }
             ScaleControls(
                 scale = uiState.config.scale,
                 mode = scaleMode,
@@ -453,7 +468,7 @@ private fun ControlsPanel(
             DebugConsole(logs = uiState.debugLogs)
         }
     }
-    if (showScanner) {
+    if (showScanner && showMonitorControls) {
         QrScannerSheet(
             onDismiss = { showScanner = false },
             onPayloadScanned = onQrPayloadScanned,

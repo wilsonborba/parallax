@@ -1,3 +1,5 @@
+use std::env;
+use std::path::PathBuf;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -6,6 +8,24 @@ use std::sync::{
 use host::cli::{CliAction, CliConfig};
 use host::control;
 use host::display;
+
+fn configure_graphics_env(display_name: &str) {
+    // Keep xrandr/X11 calls aligned with the daemon's configured display.
+    unsafe {
+        env::set_var("DISPLAY", display_name);
+    }
+
+    if env::var_os("XAUTHORITY").is_none() {
+        if let Ok(home) = env::var("HOME") {
+            let path = PathBuf::from(home).join(".Xauthority");
+            if path.exists() {
+                unsafe {
+                    env::set_var("XAUTHORITY", path);
+                }
+            }
+        }
+    }
+}
 
 fn main() {
     let action = match CliConfig::from_env() {
@@ -24,7 +44,7 @@ fn main() {
         CliAction::VirtualBackendStatus => {
             let status = display::virtual_backend_status();
             println!("{}", display::format_virtual_backend_status(&status));
-        },
+        }
         CliAction::ListVirtualDisplays => match display::list_virtual_displays() {
             Ok(displays) => println!("{}", display::format_virtual_displays(&displays)),
             Err(err) => eprintln!("Failed to list virtual displays: {err}"),
@@ -49,6 +69,7 @@ fn main() {
         },
         CliAction::Run(config) => {
             println!("Starting prlx-hostd with config: {config:?}");
+            configure_graphics_env(&config.display);
 
             match display::apply_persisted_virtual_displays() {
                 Ok(applied) if !applied.is_empty() => {

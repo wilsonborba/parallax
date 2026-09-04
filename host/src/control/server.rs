@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::io::{BufRead, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -8,7 +9,6 @@ use std::sync::{
 };
 use std::thread;
 use std::time::{Duration, Instant};
-use std::{collections::BTreeMap};
 
 use crate::capture;
 use crate::control::protocol::{read_frame, write_frame};
@@ -314,11 +314,9 @@ impl StreamCoordinator for StreamController {
 
 fn derive_stream_config(base: &StreamConfig, stream_id: u32) -> StreamConfig {
     let delta = stream_id.saturating_sub(1);
-    let display = if stream_id == 1 {
-        base.display.clone()
-    } else {
-        format!("prlx-v{stream_id}")
-    };
+    // Secondary slots inherit the same X11 root display by default. Clients can
+    // later rebind each slot to a physical/virtual monitor id via SetStreamConfig.
+    let display = base.display.clone();
     StreamConfig {
         display,
         bind_addr: offset_port(&base.bind_addr, delta),
@@ -637,13 +635,12 @@ fn run_status_socket(
                 std::io::ErrorKind::ConnectionRefused
                 | std::io::ErrorKind::NotFound
                 | std::io::ErrorKind::AddrNotAvailable => {
-                    std::fs::remove_file(&path)
-                        .map_err(|rm_err| format!("Failed to remove stale socket {path:?}: {rm_err}"))?;
+                    std::fs::remove_file(&path).map_err(|rm_err| {
+                        format!("Failed to remove stale socket {path:?}: {rm_err}")
+                    })?;
                 }
                 _ => {
-                    return Err(format!(
-                        "Failed to check existing socket {path:?}: {err}"
-                    ));
+                    return Err(format!("Failed to check existing socket {path:?}: {err}"));
                 }
             },
         }

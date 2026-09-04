@@ -203,9 +203,9 @@ impl DaemonClient {
                         let _ = self.event_tx.send(DaemonEvent::Status(self.status.clone()));
                     }
                     Err(err) => {
-                        let _ = self
-                            .event_tx
-                            .send(DaemonEvent::Error(format!("[UI-DAEMON] Failed to clone socket: {err}")));
+                        let _ = self.event_tx.send(DaemonEvent::Error(format!(
+                            "[UI-DAEMON] Failed to clone socket: {err}"
+                        )));
                     }
                 }
             }
@@ -329,12 +329,12 @@ impl DaemonClient {
                     self.reader = None;
                     self.status.connected = false;
                     let _ = self.event_tx.send(DaemonEvent::Status(self.status.clone()));
-                let _ = self
-                    .event_tx
-                    .send(DaemonEvent::Error(format!("[UI-DAEMON] Socket error: {err}")));
-                break;
+                    let _ = self.event_tx.send(DaemonEvent::Error(format!(
+                        "[UI-DAEMON] Socket error: {err}"
+                    )));
+                    break;
+                }
             }
-        }
         }
     }
 

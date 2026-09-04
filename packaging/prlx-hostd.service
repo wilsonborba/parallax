@@ -4,7 +4,10 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-ExecStart=%h/.cargo/bin/prlx-hostd --display :0 --bind 0.0.0.0:5000 --target 127.0.0.1:5000 --control-bind 0.0.0.0:0 --pairing-token auto
+Environment=DISPLAY=:0.0
+Environment=XAUTHORITY=%h/.Xauthority
+PassEnvironment=DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS WAYLAND_DISPLAY XDG_SESSION_TYPE
+ExecStart=/bin/sh -lc 'if [ -x "$HOME/.local/bin/parallax" ]; then exec "$HOME/.local/bin/parallax" host --display "${DISPLAY:-:0.0}" --bind 0.0.0.0:5000 --target 127.0.0.1:5000 --control-bind 0.0.0.0:0 --pairing-token auto; elif [ -x /usr/bin/parallax ]; then exec /usr/bin/parallax host --display "${DISPLAY:-:0.0}" --bind 0.0.0.0:5000 --target 127.0.0.1:5000 --control-bind 0.0.0.0:0 --pairing-token auto; elif [ -x "$HOME/.cargo/bin/prlx-hostd" ]; then exec "$HOME/.cargo/bin/prlx-hostd" --display "${DISPLAY:-:0.0}" --bind 0.0.0.0:5000 --target 127.0.0.1:5000 --control-bind 0.0.0.0:0 --pairing-token auto; else echo "Parallax host binary not found" >&2; exit 1; fi'
 Restart=on-failure
 RestartSec=2s
 TimeoutStopSec=10s

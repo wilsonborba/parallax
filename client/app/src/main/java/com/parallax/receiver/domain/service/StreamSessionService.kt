@@ -138,16 +138,16 @@ class StreamSessionService(
     fun setRenderSurface(streamId: Int, surface: Surface) {
         if (streamId != 1) {
             extraRenderSurfaces[streamId] = surface
-            val status = mutableState.value.streamState.status
-            if (status == StreamState.Status.Streaming || status == StreamState.Status.Connecting) {
-                val config = pendingStartConfig ?: mutableState.value.config
-                if (controlSession == null && !openControlSession(config)) {
-                    return
+            val config = pendingStartConfig ?: mutableState.value.config
+            if (controlSession == null && !openControlSession(config)) {
+                return
+            }
+            if (ensureStreamStarted(streamId)) {
+                startExtraReceiver(streamId, config, surface)
+                mutableState.update { current ->
+                    current.copy(streamState = StreamState(StreamState.Status.Streaming))
                 }
-                if (ensureStreamStarted(streamId)) {
-                    startExtraReceiver(streamId, config, surface)
-                    updateReceiverRunningState()
-                }
+                updateReceiverRunningState()
             }
             return
         }
@@ -641,9 +641,7 @@ class StreamSessionService(
             return "Monitor $displayId already running."
         }
         return try {
-            // Host currently expects X11 DISPLAY (e.g. :0.0) for capture.
-            // Do not send virtual monitor id as display selector until host supports monitor-region capture.
-            session.setStreamConfig(streamId = streamId)
+            session.setStreamConfig(streamId = streamId, displayId = displayId)
             session.startStream(streamId)
             null
         } catch (e: Exception) {
