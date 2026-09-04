@@ -172,7 +172,11 @@ impl eframe::App for HostUiApp {
             match event {
                 DaemonEvent::Status(status) => {
                     self.status = status;
-                    self.push_log("UI", "DEBUG", format!("Status update: {:?}", self.status.state));
+                    self.push_log(
+                        "UI",
+                        "DEBUG",
+                        format!("Status update: {:?}", self.status.state),
+                    );
                     if self.status.connected {
                         // Clear stale connect errors once the daemon is reachable.
                         self.last_error = None;
@@ -545,7 +549,10 @@ impl eframe::App for HostUiApp {
 
 const MAX_LOG_LINES: usize = 400;
 
-fn classify_log_entry(raw: &str, default_level: &'static str) -> (&'static str, &'static str, String) {
+fn classify_log_entry(
+    raw: &str,
+    default_level: &'static str,
+) -> (&'static str, &'static str, String) {
     if let Some(rest) = raw.strip_prefix("[HOSTD][") {
         if let Some((level, msg)) = rest.split_once("] ") {
             let level = normalize_level(level);

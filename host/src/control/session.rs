@@ -118,18 +118,12 @@ impl Session {
             self.update_daemon_state(DaemonState::Waiting);
         }
 
-        vec![Frame::new(
-            MessageType::HelloAck,
-            b"prlx-host".to_vec(),
-        )]
+        vec![Frame::new(MessageType::HelloAck, b"prlx-host".to_vec())]
     }
 
     fn handle_pair_request(&mut self, payload: Vec<u8>) -> Vec<Frame> {
         if self.state == HandshakeState::AwaitHello {
-            return vec![Frame::new(
-                MessageType::Error,
-                b"hello required".to_vec(),
-            )];
+            return vec![Frame::new(MessageType::Error, b"hello required".to_vec())];
         }
 
         let (token, target_port) = match parse_pair_request(payload) {
@@ -152,10 +146,7 @@ impl Session {
                     "[control] PairRequest received while auth pending from {}",
                     self.client_addr
                 );
-                return vec![Frame::new(
-                    MessageType::Error,
-                    b"auth in progress".to_vec(),
-                )];
+                return vec![Frame::new(MessageType::Error, b"auth in progress".to_vec())];
             }
             if let Some(target_port) = target_port.or(self.default_target_port) {
                 let target = format!("{}:{}", self.client_addr.ip(), target_port);
@@ -230,10 +221,7 @@ impl Session {
                 "[control] AuthResponse nonce reused for {}",
                 self.client_addr
             );
-            return vec![Frame::new(
-                MessageType::Error,
-                b"nonce reused".to_vec(),
-            )];
+            return vec![Frame::new(MessageType::Error, b"nonce reused".to_vec())];
         }
 
         let session_key = crypto::derive_session_key(&self.master_key, &nonce);
@@ -242,10 +230,7 @@ impl Session {
                 "[control] AuthResponse HMAC failed for {}",
                 self.client_addr
             );
-            return vec![Frame::new(
-                MessageType::PairReject,
-                b"auth failed".to_vec(),
-            )];
+            return vec![Frame::new(MessageType::PairReject, b"auth failed".to_vec())];
         }
 
         self.used_nonces.insert(nonce);
@@ -257,10 +242,7 @@ impl Session {
 
     fn handle_start_stream(&mut self, payload: Vec<u8>) -> Vec<Frame> {
         if self.state != HandshakeState::Paired {
-            return vec![Frame::new(
-                MessageType::Error,
-                b"pairing required".to_vec(),
-            )];
+            return vec![Frame::new(MessageType::Error, b"pairing required".to_vec())];
         }
 
         let stream_id = match parse_optional_stream_id_payload(payload) {
@@ -279,10 +261,7 @@ impl Session {
 
     fn handle_stop_stream(&mut self, payload: Vec<u8>) -> Vec<Frame> {
         if self.state != HandshakeState::Paired {
-            return vec![Frame::new(
-                MessageType::Error,
-                b"pairing required".to_vec(),
-            )];
+            return vec![Frame::new(MessageType::Error, b"pairing required".to_vec())];
         }
 
         let stream_id = match parse_optional_stream_id_payload(payload) {
@@ -301,10 +280,7 @@ impl Session {
 
     fn handle_list_streams(&mut self) -> Vec<Frame> {
         if self.state != HandshakeState::Paired {
-            return vec![Frame::new(
-                MessageType::Error,
-                b"pairing required".to_vec(),
-            )];
+            return vec![Frame::new(MessageType::Error, b"pairing required".to_vec())];
         }
 
         match self.stream.list_streams() {
@@ -315,10 +291,7 @@ impl Session {
 
     fn handle_set_stream_config(&mut self, payload: Vec<u8>) -> Vec<Frame> {
         if self.state != HandshakeState::Paired {
-            return vec![Frame::new(
-                MessageType::Error,
-                b"pairing required".to_vec(),
-            )];
+            return vec![Frame::new(MessageType::Error, b"pairing required".to_vec())];
         }
 
         let parsed = match parse_set_stream_config_payload(payload) {
@@ -343,17 +316,17 @@ impl Session {
 
     fn handle_list_displays(&mut self) -> Vec<Frame> {
         if self.state != HandshakeState::Paired {
-            return vec![Frame::new(
-                MessageType::Error,
-                b"pairing required".to_vec(),
-            )];
+            return vec![Frame::new(MessageType::Error, b"pairing required".to_vec())];
         }
 
         eprintln!("[control] list_displays requested by {}", self.client_addr);
         let physical = match display::list_displays() {
             Ok(displays) => displays,
             Err(err) => {
-                eprintln!("[control] list_displays physical failed for {}: {}", self.client_addr, err);
+                eprintln!(
+                    "[control] list_displays physical failed for {}: {}",
+                    self.client_addr, err
+                );
                 return vec![Frame::new(MessageType::Error, err.into_bytes())];
             }
         };
@@ -361,7 +334,10 @@ impl Session {
         let virtuals = match display::list_virtual_displays() {
             Ok(displays) => displays,
             Err(err) => {
-                eprintln!("[control] list_displays virtual failed for {}: {}", self.client_addr, err);
+                eprintln!(
+                    "[control] list_displays virtual failed for {}: {}",
+                    self.client_addr, err
+                );
                 return vec![Frame::new(MessageType::Error, err.into_bytes())];
             }
         };
@@ -398,23 +374,26 @@ impl Session {
 
     fn handle_add_virtual_display(&mut self, payload: Vec<u8>) -> Vec<Frame> {
         if self.state != HandshakeState::Paired {
-            return vec![Frame::new(
-                MessageType::Error,
-                b"pairing required".to_vec(),
-            )];
+            return vec![Frame::new(MessageType::Error, b"pairing required".to_vec())];
         }
 
         let raw = match String::from_utf8(payload) {
             Ok(value) => value,
             Err(_) => {
-                eprintln!("[control] add_virtual_display invalid utf8 from {}", self.client_addr);
+                eprintln!(
+                    "[control] add_virtual_display invalid utf8 from {}",
+                    self.client_addr
+                );
                 return vec![Frame::new(
                     MessageType::Error,
                     b"invalid add display payload".to_vec(),
                 )];
             }
         };
-        eprintln!("[control] add_virtual_display from {} payload={}", self.client_addr, raw);
+        eprintln!(
+            "[control] add_virtual_display from {} payload={}",
+            self.client_addr, raw
+        );
 
         let parts: Vec<&str> = raw.split(',').collect();
         if parts.len() != 5 {
@@ -456,7 +435,10 @@ impl Session {
                 b"virtual display added".to_vec(),
             )],
             Err(err) => {
-                eprintln!("[control] add_virtual_display failed for {}: {}", self.client_addr, err);
+                eprintln!(
+                    "[control] add_virtual_display failed for {}: {}",
+                    self.client_addr, err
+                );
                 vec![Frame::new(MessageType::Error, err.into_bytes())]
             }
         }
@@ -464,26 +446,32 @@ impl Session {
 
     fn handle_remove_virtual_display(&mut self, payload: Vec<u8>) -> Vec<Frame> {
         if self.state != HandshakeState::Paired {
-            return vec![Frame::new(
-                MessageType::Error,
-                b"pairing required".to_vec(),
-            )];
+            return vec![Frame::new(MessageType::Error, b"pairing required".to_vec())];
         }
 
         let id = match String::from_utf8(payload) {
             Ok(value) => value.trim().to_string(),
             Err(_) => {
-                eprintln!("[control] remove_virtual_display invalid utf8 from {}", self.client_addr);
+                eprintln!(
+                    "[control] remove_virtual_display invalid utf8 from {}",
+                    self.client_addr
+                );
                 return vec![Frame::new(
                     MessageType::Error,
                     b"invalid remove display payload".to_vec(),
                 )];
             }
         };
-        eprintln!("[control] remove_virtual_display from {} id={}", self.client_addr, id);
+        eprintln!(
+            "[control] remove_virtual_display from {} id={}",
+            self.client_addr, id
+        );
 
         if id.is_empty() {
-            return vec![Frame::new(MessageType::Error, b"display id required".to_vec())];
+            return vec![Frame::new(
+                MessageType::Error,
+                b"display id required".to_vec(),
+            )];
         }
 
         match self.stream.list_streams() {
@@ -509,10 +497,7 @@ impl Session {
 
     fn handle_client_log(&mut self, payload: Vec<u8>) -> Vec<Frame> {
         if self.state != HandshakeState::Paired {
-            return vec![Frame::new(
-                MessageType::Error,
-                b"pairing required".to_vec(),
-            )];
+            return vec![Frame::new(MessageType::Error, b"pairing required".to_vec())];
         }
 
         let raw = match String::from_utf8(payload) {
@@ -540,10 +525,7 @@ impl Session {
             message = raw;
         }
 
-        eprintln!(
-            "[client-log][{}][{}] {}",
-            self.client_addr, level, message
-        );
+        eprintln!("[client-log][{}][{}] {}", self.client_addr, level, message);
 
         vec![Frame::new(MessageType::ClientLogAck, b"ok".to_vec())]
     }

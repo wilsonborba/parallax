@@ -36,6 +36,15 @@ pub struct VirtualBackendStatus {
     pub vkms_loaded: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct CaptureRegion {
+    pub id: String,
+    pub width: u32,
+    pub height: u32,
+    pub x: i32,
+    pub y: i32,
+}
+
 pub fn list_displays() -> Result<Vec<DisplayInfo>, String> {
     match Command::new("xrandr").arg("--query").output() {
         Ok(output) => {
@@ -190,6 +199,55 @@ pub fn list_virtual_displays() -> Result<Vec<VirtualDisplay>, String> {
     Ok(displays)
 }
 
+pub fn resolve_capture_region(selector: &str) -> Result<Option<CaptureRegion>, String> {
+    let trimmed = selector.trim();
+    if trimmed.is_empty() || trimmed.starts_with(':') {
+        return Ok(None);
+    }
+
+    let physical = list_displays()?;
+    if let Some(display) = physical
+        .iter()
+        .find(|display| display.id == trimmed || display.name == trimmed)
+    {
+        let width = display
+            .width
+            .ok_or_else(|| format!("Display {trimmed} is missing width metadata"))?;
+        let height = display
+            .height
+            .ok_or_else(|| format!("Display {trimmed} is missing height metadata"))?;
+        let x = display
+            .pos_x
+            .ok_or_else(|| format!("Display {trimmed} is missing x metadata"))?;
+        let y = display
+            .pos_y
+            .ok_or_else(|| format!("Display {trimmed} is missing y metadata"))?;
+        return Ok(Some(CaptureRegion {
+            id: display.id.clone(),
+            width,
+            height,
+            x,
+            y,
+        }));
+    }
+
+    let virtuals = list_virtual_displays()?;
+    if let Some(display) = virtuals
+        .iter()
+        .find(|display| display.id == trimmed && display.enabled)
+    {
+        return Ok(Some(CaptureRegion {
+            id: display.id.clone(),
+            width: display.width,
+            height: display.height,
+            x: display.x,
+            y: display.y,
+        }));
+    }
+
+    Err("display_id not found".to_string())
+}
+
 pub fn enable_virtual_display(display: VirtualDisplay) -> Result<(), String> {
     apply_setmonitor(&display)?;
     upsert_virtual_display(&display)?;
@@ -283,7 +341,9 @@ pub fn format_virtual_backend_status(status: &VirtualBackendStatus) -> String {
 
     out.push('\n');
     if status.session_type.eq_ignore_ascii_case("wayland") {
-        out.push_str("note=Wayland session detected; xrandr virtual monitors may be unavailable.\n");
+        out.push_str(
+            "note=Wayland session detected; xrandr virtual monitors may be unavailable.\n",
+        );
     } else if !status.xrandr_available {
         out.push_str("note=xrandr not found; install x11-xserver-utils.\n");
     } else if !status.xrandr_setmonitor_supported {
@@ -332,16 +392,14 @@ fn apply_setmonitor(display: &VirtualDisplay) -> Result<(), String> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(
-            if stderr.is_empty() {
-                "xrandr --setmonitor failed. Check DISPLAY/X11 session and monitor naming conflicts."
-                    .to_string()
-            } else {
-                format!(
-                    "xrandr --setmonitor failed: {stderr}. Check DISPLAY/X11 session and monitor naming conflicts."
-                )
-            },
-        );
+        return Err(if stderr.is_empty() {
+            "xrandr --setmonitor failed. Check DISPLAY/X11 session and monitor naming conflicts."
+                .to_string()
+        } else {
+            format!(
+                "xrandr --setmonitor failed: {stderr}. Check DISPLAY/X11 session and monitor naming conflicts."
+            )
+        });
     }
 
     Ok(())
