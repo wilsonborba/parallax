@@ -9,6 +9,8 @@ BIN_DIR="$APP_HOME/bin"
 LOCAL_BIN="${XDG_BIN_HOME:-$HOME/.local/bin}"
 DESKTOP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 ICON_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/scalable/apps"
+SYSTEMD_USER_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+SKIP_DEPS=0
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1
@@ -87,16 +89,21 @@ build_binaries() {
 
 install_files() {
   say "Installing user files..."
-  mkdir -p "$BIN_DIR" "$LOCAL_BIN" "$DESKTOP_DIR" "$ICON_DIR"
+  mkdir -p "$BIN_DIR" "$LOCAL_BIN" "$DESKTOP_DIR" "$ICON_DIR" "$SYSTEMD_USER_DIR"
 
   install -m 0755 "$REPO_ROOT/host/target/release/prlx-hostd" "$BIN_DIR/prlx-hostd"
   install -m 0755 "$REPO_ROOT/host/target/release/prlx-host-ui" "$BIN_DIR/prlx-host-ui"
   install -m 0755 "$REPO_ROOT/packaging/templates/parallax-wrapper.sh" "$LOCAL_BIN/parallax"
+  install -m 0644 "$REPO_ROOT/packaging/prlx-hostd.service" "$SYSTEMD_USER_DIR/prlx-hostd.service"
   install -m 0644 "$REPO_ROOT/packaging/templates/parallax.desktop" "$DESKTOP_DIR/parallax.desktop"
   install -m 0644 "$REPO_ROOT/packaging/assets/parallax.svg" "$ICON_DIR/parallax.svg"
 
   if need_cmd update-desktop-database; then
     update-desktop-database "$DESKTOP_DIR" >/dev/null 2>&1 || true
+  fi
+
+  if need_cmd systemctl; then
+    systemctl --user daemon-reload >/dev/null 2>&1 || true
   fi
 }
 
@@ -120,11 +127,16 @@ print_success() {
   printf 'Installed command: %s\n' "$LOCAL_BIN/parallax"
   printf 'Desktop entry:    %s\n' "$DESKTOP_DIR/parallax.desktop"
   printf 'Icon:             %s\n' "$ICON_DIR/parallax.svg"
+  printf 'User service:     %s\n' "$SYSTEMD_USER_DIR/prlx-hostd.service"
   printf '\n'
   printf 'Usage:\n'
   printf '  parallax            # opens the UI\n'
   printf '  parallax host --help\n'
   printf '  parallax doctor\n'
+  printf '\n'
+  printf 'Optional user service:\n'
+  printf '  systemctl --user enable --now prlx-hostd.service\n'
+  printf '  systemctl --user status prlx-hostd.service\n'
   printf '\n'
 
   case ":$PATH:" in
@@ -138,8 +150,21 @@ print_success() {
 }
 
 main() {
+  for arg in "$@"; do
+    case "$arg" in
+      --skip-deps) SKIP_DEPS=1 ;;
+      *)
+        fail "Invalid argument: $arg. Use --skip-deps if dependencies are already installed."
+        ;;
+    esac
+  done
+
   check_debian
-  install_apt_packages
+  if [[ "$SKIP_DEPS" -eq 0 ]]; then
+    install_apt_packages
+  else
+    say "Skipping dependency installation (--skip-deps)."
+  fi
   ensure_rust
   load_cargo_env
   build_binaries

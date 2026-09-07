@@ -14,9 +14,15 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -28,9 +34,11 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -104,7 +112,10 @@ private enum class ViewScaleMode(val storedValue: String) {
 @Composable
 fun StreamScreen(
     uiState: UiState,
+    windowStreamId: Int,
     uiEvents: Flow<StreamUiEvent>,
+    onOpenMonitorWindow: (Int) -> Unit,
+    onCloseWindowRequested: () -> Unit,
     onStartClicked: () -> Unit,
     onStopClicked: () -> Unit,
     onScaleChanged: (Float) -> Unit,
@@ -114,8 +125,8 @@ fun StreamScreen(
     onControlPortChanged: (Int) -> Unit,
     onAccessPinChanged: (String) -> Unit,
     onQrPayloadScanned: (String) -> Unit,
-    onSurfaceAvailable: (Surface) -> Unit,
-    onSurfaceDestroyed: () -> Unit,
+    onSurfaceAvailable: (Int, Surface) -> Unit,
+    onSurfaceDestroyed: (Int) -> Unit,
     onAddMonitorClicked: () -> Unit,
     onRemoveMonitorClicked: (String) -> Unit,
     onRefreshTopologyClicked: () -> Unit,
@@ -137,8 +148,18 @@ fun StreamScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(uiEvents) {
         uiEvents.collect { event ->
-            if (event is StreamUiEvent.ShowMessage) {
-                snackbarHostState.showSnackbar(event.message)
+            when (event) {
+                is StreamUiEvent.ShowMessage -> snackbarHostState.showSnackbar(event.message)
+                is StreamUiEvent.OpenMonitorWindow -> {
+                    if (windowStreamId == 1) {
+                        onOpenMonitorWindow(event.streamId)
+                    }
+                }
+                StreamUiEvent.CloseWindow -> {
+                    if (windowStreamId > 1) {
+                        onCloseWindowRequested()
+                    }
+                }
             }
         }
     }
@@ -155,7 +176,15 @@ fun StreamScreen(
             tonalElevation = 0.dp,
         ) {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                val videoDimensions = uiState.videoDimensions
+                val panelDimensions = if (windowStreamId == 1) {
+                    null
+                } else {
+                    uiState.monitorPanels
+                        .firstOrNull { it.streamId == windowStreamId }
+                        ?.let { VideoDimensions(it.width, it.height) }
+                }
+                val videoDimensions = panelDimensions
+                    ?: uiState.videoDimensions
                     ?: VideoDimensions(DEFAULT_REMOTE_WIDTH, DEFAULT_REMOTE_HEIGHT)
                 val aspectRatio = videoDimensions.width.toFloat() / videoDimensions.height.toFloat()
                 var baseWidth = maxWidth
@@ -189,11 +218,16 @@ fun StreamScreen(
                         statusHandleVisible = false
                     }
                 }
+                val onboardingHintVisible = !controlsVisible &&
+                    !settingsHandleVisible &&
+                    status != StreamState.Status.Streaming
                 Box(modifier = Modifier.fillMaxSize()) {
                     VideoArea(
+                        streamId = windowStreamId,
                         baseWidth = baseWidth,
                         baseHeight = baseHeight,
-                        videoDimensions = videoDimensions,
+                        width = videoDimensions.width.coerceAtLeast(1),
+                        height = videoDimensions.height.coerceAtLeast(1),
                         scale = effectiveScale,
                         onSurfaceAvailable = onSurfaceAvailable,
                         onSurfaceDestroyed = onSurfaceDestroyed,
@@ -231,6 +265,16 @@ fun StreamScreen(
                             .align(Alignment.TopEnd)
                             .padding(spacing.medium),
                     )
+                    AnimatedVisibility(
+                        visible = onboardingHintVisible,
+                        enter = fadeIn() + slideInVertically(initialOffsetY = { -it / 3 }),
+                        exit = fadeOut() + slideOutVertically(targetOffsetY = { -it / 4 }),
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = spacing.large),
+                    ) {
+                        FirstRunHint()
+                    }
                     if (controlsVisible) {
                         ControlsPanel(
                             uiState = uiState,
@@ -249,6 +293,7 @@ fun StreamScreen(
                             onRefreshTopologyClicked = onRefreshTopologyClicked,
                             onStartMonitorClicked = onStartMonitorClicked,
                             onStopMonitorClicked = onStopMonitorClicked,
+                            showMonitorControls = windowStreamId == 1,
                             statsEnabled = statsEnabled,
                             onStatsVisibilityChanged = { enabled ->
                                 statsEnabled = enabled
@@ -289,6 +334,7 @@ private fun ControlsPanel(
     onRefreshTopologyClicked: () -> Unit,
     onStartMonitorClicked: (String) -> Unit,
     onStopMonitorClicked: (String) -> Unit,
+    showMonitorControls: Boolean,
     statsEnabled: Boolean,
     onStatsVisibilityChanged: (Boolean) -> Unit,
     onClose: () -> Unit,
@@ -297,6 +343,7 @@ private fun ControlsPanel(
 ) {
     val spacing = MaterialTheme.spacing
     val context = LocalContext.current
+    val scrollState = rememberScrollState()
     var showScanner by remember { mutableStateOf(false) }
     val cameraPermissionGranted = remember {
         mutableStateOf(
@@ -329,6 +376,7 @@ private fun ControlsPanel(
                     color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f),
                     shape = MaterialTheme.shapes.extraLarge,
                 )
+                .verticalScroll(scrollState)
                 .padding(spacing.large),
             verticalArrangement = Arrangement.spacedBy(spacing.medium),
         ) {
@@ -354,30 +402,39 @@ private fun ControlsPanel(
                     Text("Hide")
                 }
             }
-            ConnectionSettings(
-                host = uiState.config.host,
-                streamPort = uiState.config.streamPort,
-                controlPort = uiState.controlPort,
-                accessPin = uiState.config.accessPin,
-                enabled = status == StreamState.Status.Idle || status == StreamState.Status.Error,
-                onHostChanged = onHostChanged,
-                onStreamPortChanged = onStreamPortChanged,
-                onControlPortChanged = onControlPortChanged,
-                onAccessPinChanged = onAccessPinChanged,
-                onScanQrClicked = {
-                    if (cameraPermissionGranted.value) {
-                        showScanner = true
-                    } else {
-                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                    }
-                },
-            )
-            StreamActions(
-                status = status,
-                errorMessage = uiState.streamState.message,
-                onStartClicked = onStartClicked,
-                onStopClicked = onStopClicked,
-            )
+            if (showMonitorControls) {
+                ConnectionSettings(
+                    host = uiState.config.host,
+                    streamPort = uiState.config.streamPort,
+                    controlPort = uiState.controlPort,
+                    accessPin = uiState.config.accessPin,
+                    enabled = status == StreamState.Status.Idle || status == StreamState.Status.Error,
+                    onHostChanged = onHostChanged,
+                    onStreamPortChanged = onStreamPortChanged,
+                    onControlPortChanged = onControlPortChanged,
+                    onAccessPinChanged = onAccessPinChanged,
+                    onScanQrClicked = {
+                        if (cameraPermissionGranted.value) {
+                            showScanner = true
+                        } else {
+                            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                        }
+                    },
+                )
+                StreamActions(
+                    status = status,
+                    receiverRunning = uiState.receiverRunning,
+                    errorMessage = uiState.streamState.message,
+                    onStartClicked = onStartClicked,
+                    onStopClicked = onStopClicked,
+                )
+            } else {
+                Text(
+                    text = "Secondary monitor window (read-only).",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(spacing.small),
                 verticalAlignment = Alignment.CenterVertically,
@@ -391,28 +448,126 @@ private fun ControlsPanel(
                     Text(if (statsEnabled) "On" else "Off")
                 }
             }
-            MonitorControls(
-                monitorPanels = uiState.monitorPanels,
-                topologyBusy = uiState.topologyBusy,
-                onAddMonitorClicked = onAddMonitorClicked,
-                onRemoveMonitorClicked = onRemoveMonitorClicked,
-                onRefreshTopologyClicked = onRefreshTopologyClicked,
-                onStartMonitorClicked = onStartMonitorClicked,
-                onStopMonitorClicked = onStopMonitorClicked,
-            )
+            if (showMonitorControls) {
+                MonitorControls(
+                    monitorPanels = uiState.monitorPanels,
+                    topologyBusy = uiState.topologyBusy,
+                    onAddMonitorClicked = onAddMonitorClicked,
+                    onRemoveMonitorClicked = onRemoveMonitorClicked,
+                    onRefreshTopologyClicked = onRefreshTopologyClicked,
+                    onStartMonitorClicked = onStartMonitorClicked,
+                    onStopMonitorClicked = onStopMonitorClicked,
+                )
+            }
             ScaleControls(
                 scale = uiState.config.scale,
                 mode = scaleMode,
                 onModeChange = onScaleModeChanged,
                 onScaleChanged = onScaleChanged,
             )
+            DebugConsole(logs = uiState.debugLogs)
         }
     }
-    if (showScanner) {
+    if (showScanner && showMonitorControls) {
         QrScannerSheet(
             onDismiss = { showScanner = false },
             onPayloadScanned = onQrPayloadScanned,
         )
+    }
+}
+
+@Composable
+private fun DebugConsole(
+    logs: List<String>,
+    modifier: Modifier = Modifier,
+) {
+    val spacing = MaterialTheme.spacing
+    val scrollState = rememberScrollState()
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        tonalElevation = 2.dp,
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(spacing.medium),
+            verticalArrangement = Arrangement.spacedBy(spacing.small),
+        ) {
+            Text(
+                text = "Debug log",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Surface(
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
+                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 100.dp, max = 220.dp)
+                        .verticalScroll(scrollState)
+                        .padding(horizontal = spacing.small, vertical = spacing.small),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    if (logs.isEmpty()) {
+                        Text(
+                            text = "No logs yet.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        logs.takeLast(80).forEach { line ->
+                            Text(
+                                text = line,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FirstRunHint(
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.widthIn(max = 460.dp),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+        tonalElevation = 6.dp,
+        shadowElevation = 12.dp,
+        border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.24f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = "Getting started",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = "Hover or tap the top-right corner to open controls.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = "1. Scan host QR   2. Enter PIN   3. Start stream",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -429,54 +584,97 @@ private fun MonitorControls(
     val spacing = MaterialTheme.spacing
     val canAdd = monitorPanels.size < 3 && !topologyBusy
     Column(verticalArrangement = Arrangement.spacedBy(spacing.small)) {
-        Text(
-            text = "Virtual monitors",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(spacing.small)) {
-            FilledTonalButton(onClick = onAddMonitorClicked, enabled = canAdd) {
-                Text("+1 monitor")
-            }
-            OutlinedButton(onClick = onRefreshTopologyClicked, enabled = !topologyBusy) {
-                Text("Refresh")
+        Surface(
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+            tonalElevation = 2.dp,
+            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(spacing.medium),
+                verticalArrangement = Arrangement.spacedBy(spacing.small),
+            ) {
+                Text(
+                    text = "Virtual monitors",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = "${monitorPanels.size}/3 active slots",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(spacing.small)) {
+                    FilledTonalButton(onClick = onAddMonitorClicked, enabled = canAdd) {
+                        Text("+1 monitor")
+                    }
+                    OutlinedButton(onClick = onRefreshTopologyClicked, enabled = !topologyBusy) {
+                        Text("Refresh")
+                    }
+                }
             }
         }
         if (monitorPanels.isEmpty()) {
-            Text(
-                text = "No virtual monitors configured.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Surface(
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)),
+            ) {
+                Text(
+                    text = "No virtual monitors configured yet. Tap +1 monitor to add one.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(spacing.medium),
+                )
+            }
         } else {
             monitorPanels.forEach { panel ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+                    tonalElevation = 1.dp,
+                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)),
                 ) {
-                    Text(
-                        text = buildMonitorLine(panel),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Spacer(modifier = Modifier.width(spacing.small))
-                    OutlinedButton(
-                        onClick = {
-                            if (panel.running) onStopMonitorClicked(panel.displayId)
-                            else onStartMonitorClicked(panel.displayId)
-                        },
-                        enabled = !topologyBusy,
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(spacing.medium),
+                        verticalArrangement = Arrangement.spacedBy(spacing.small),
                     ) {
-                        Text(if (panel.running) "Stop" else "Start")
-                    }
-                    Spacer(modifier = Modifier.width(spacing.small))
-                    OutlinedButton(
-                        onClick = { onRemoveMonitorClicked(panel.displayId) },
-                        enabled = !topologyBusy,
-                    ) {
-                        Text("-")
+                        Text(
+                            text = panel.displayId,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = buildMonitorLine(panel),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(spacing.small),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    if (panel.running) onStopMonitorClicked(panel.displayId)
+                                    else onStartMonitorClicked(panel.displayId)
+                                },
+                                enabled = !topologyBusy,
+                            ) {
+                                Text(if (panel.running) "Stop" else "Start")
+                            }
+                            OutlinedButton(
+                                onClick = { onRemoveMonitorClicked(panel.displayId) },
+                                enabled = !topologyBusy,
+                            ) {
+                                Text("Remove")
+                            }
+                        }
                     }
                 }
             }
@@ -740,11 +938,18 @@ private fun QrScannerSheet(
 @Composable
 private fun StreamActions(
     status: StreamState.Status,
+    receiverRunning: Boolean,
     errorMessage: String?,
     onStartClicked: () -> Unit,
     onStopClicked: () -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
+    if (receiverRunning) {
+        OutlinedButton(onClick = onStopClicked, modifier = Modifier.fillMaxWidth()) {
+            Text("Stop stream")
+        }
+        return
+    }
     when (status) {
         StreamState.Status.Idle -> {
             FilledTonalButton(onClick = onStartClicked, modifier = Modifier.fillMaxWidth()) {
@@ -975,14 +1180,112 @@ private fun CornerRevealArea(
     )
 }
 
+private data class RenderedPanel(
+    val streamId: Int,
+    val width: Int,
+    val height: Int,
+)
+
 @Composable
-fun VideoArea(
+private fun VideoGridArea(
+    panels: List<RenderedPanel>,
     baseWidth: Dp,
     baseHeight: Dp,
-    videoDimensions: VideoDimensions,
     scale: Float,
-    onSurfaceAvailable: (Surface) -> Unit,
-    onSurfaceDestroyed: () -> Unit,
+    onSurfaceAvailable: (Int, Surface) -> Unit,
+    onSurfaceDestroyed: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (panels.size <= 1) {
+        val panel = panels.firstOrNull() ?: RenderedPanel(1, DEFAULT_REMOTE_WIDTH, DEFAULT_REMOTE_HEIGHT)
+        VideoArea(
+            streamId = panel.streamId,
+            baseWidth = baseWidth,
+            baseHeight = baseHeight,
+            width = panel.width,
+            height = panel.height,
+            scale = scale,
+            onSurfaceAvailable = onSurfaceAvailable,
+            onSurfaceDestroyed = onSurfaceDestroyed,
+            modifier = modifier,
+        )
+        return
+    }
+
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .width(baseWidth)
+                .height(baseHeight)
+                .graphicsLayer(scaleX = scale, scaleY = scale),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            val topPanels = panels.take(2)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                topPanels.forEach { panel ->
+                    VideoArea(
+                        streamId = panel.streamId,
+                        baseWidth = 1.dp,
+                        baseHeight = 1.dp,
+                        width = panel.width,
+                        height = panel.height,
+                        scale = 1f,
+                        useBaseSize = false,
+                        onSurfaceAvailable = onSurfaceAvailable,
+                        onSurfaceDestroyed = onSurfaceDestroyed,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxSize(),
+                    )
+                }
+            }
+            if (panels.size >= 3) {
+                val panel = panels[2]
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    VideoArea(
+                        streamId = panel.streamId,
+                        baseWidth = 1.dp,
+                        baseHeight = 1.dp,
+                        width = panel.width,
+                        height = panel.height,
+                        scale = 1f,
+                        useBaseSize = false,
+                        onSurfaceAvailable = onSurfaceAvailable,
+                        onSurfaceDestroyed = onSurfaceDestroyed,
+                        modifier = Modifier
+                            .weight(0.8f)
+                            .fillMaxSize(),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun VideoArea(
+    streamId: Int,
+    baseWidth: Dp,
+    baseHeight: Dp,
+    width: Int,
+    height: Int,
+    scale: Float,
+    useBaseSize: Boolean = true,
+    onSurfaceAvailable: (Int, Surface) -> Unit,
+    onSurfaceDestroyed: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val currentOnSurfaceAvailable by rememberUpdatedState(onSurfaceAvailable)
@@ -991,11 +1294,15 @@ fun VideoArea(
         modifier = modifier,
         contentAlignment = Alignment.Center,
     ) {
-        Surface(
-            modifier = Modifier
+        val surfaceModifier = if (useBaseSize) {
+            Modifier
                 .width(baseWidth)
                 .height(baseHeight)
-                .graphicsLayer(scaleX = scale, scaleY = scale),
+        } else {
+            Modifier.fillMaxSize()
+        }
+        Surface(
+            modifier = surfaceModifier.graphicsLayer(scaleX = scale, scaleY = scale),
             color = MaterialTheme.colorScheme.surfaceVariant,
             tonalElevation = 0.dp,
             shadowElevation = 0.dp,
@@ -1006,7 +1313,7 @@ fun VideoArea(
                         holder.addCallback(
                             object : SurfaceHolder.Callback {
                                 override fun surfaceCreated(holder: SurfaceHolder) {
-                                    currentOnSurfaceAvailable(holder.surface)
+                                    currentOnSurfaceAvailable(streamId, holder.surface)
                                 }
 
                                 override fun surfaceChanged(
@@ -1017,15 +1324,15 @@ fun VideoArea(
                                 ) = Unit
 
                                 override fun surfaceDestroyed(holder: SurfaceHolder) {
-                                    currentOnSurfaceDestroyed()
+                                    currentOnSurfaceDestroyed(streamId)
                                 }
                             },
                         )
-                        holder.setFixedSize(videoDimensions.width, videoDimensions.height)
+                        holder.setFixedSize(width, height)
                     }
                 },
                 update = { view ->
-                    view.holder.setFixedSize(videoDimensions.width, videoDimensions.height)
+                    view.holder.setFixedSize(width, height)
                 },
                 modifier = Modifier.fillMaxSize(),
             )

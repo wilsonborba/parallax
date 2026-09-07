@@ -17,24 +17,25 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.parallax.receiver.AppServices
 import com.parallax.receiver.domain.module.SetScaleUseCase
-import com.parallax.receiver.domain.module.SetViewModeUseCase
 import com.parallax.receiver.domain.module.SetStreamEndpointUseCase
+import com.parallax.receiver.domain.module.SetViewModeUseCase
 import com.parallax.receiver.domain.module.StartStreamUseCase
 import com.parallax.receiver.domain.module.StopStreamUseCase
 import com.parallax.receiver.presentation.theme.ReceiverTheme
 import com.parallax.receiver.presentation.vm.StreamViewModel
 
-class MainActivity : ComponentActivity() {
-    private val windowStreamId: Int by lazy { intent?.getIntExtra(EXTRA_STREAM_ID, 1) ?: 1 }
+class StreamWindowActivity : ComponentActivity() {
+    private val windowStreamId: Int by lazy {
+        intent?.getIntExtra(EXTRA_STREAM_ID, 2)?.coerceAtLeast(2) ?: 2
+    }
 
     private val streamViewModel: StreamViewModel by viewModels {
-        StreamViewModelFactory(this, windowStreamId)
+        StreamWindowViewModelFactory(this, windowStreamId)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        handleIntentPayload(intent)
         setContent {
             ReceiverTheme {
                 Surface(
@@ -47,8 +48,8 @@ class MainActivity : ComponentActivity() {
                         uiState = uiState,
                         windowStreamId = windowStreamId,
                         uiEvents = streamViewModel.uiEvents,
-                        onOpenMonitorWindow = ::openMonitorWindow,
-                        onCloseWindowRequested = {},
+                        onOpenMonitorWindow = {},
+                        onCloseWindowRequested = { finish() },
                         onStartClicked = streamViewModel::onStartClicked,
                         onStopClicked = streamViewModel::onStopClicked,
                         onScaleChanged = streamViewModel::onScaleChanged,
@@ -72,36 +73,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onNewIntent(intent: android.content.Intent) {
-        super.onNewIntent(intent)
-        handleIntentPayload(intent)
-    }
-
-    private fun handleIntentPayload(intent: android.content.Intent?) {
-        val payload = intent?.dataString ?: return
-        streamViewModel.onQrPayloadScanned(payload)
-    }
-
-    private fun openMonitorWindow(streamId: Int) {
-        if (streamId <= 1) return
-        val launchIntent = android.content.Intent(this, StreamWindowActivity::class.java).apply {
-            putExtra(StreamWindowActivity.EXTRA_STREAM_ID, streamId)
-            addFlags(
-                android.content.Intent.FLAG_ACTIVITY_LAUNCH_ADJACENT or
-                android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
-                    android.content.Intent.FLAG_ACTIVITY_MULTIPLE_TASK or
-                    android.content.Intent.FLAG_ACTIVITY_NEW_DOCUMENT,
-            )
-        }
-        startActivity(launchIntent)
-    }
-
-    private companion object {
+    companion object {
         const val EXTRA_STREAM_ID = "stream_id"
     }
 }
 
-private class StreamViewModelFactory(
+private class StreamWindowViewModelFactory(
     private val context: Context,
     private val windowStreamId: Int,
 ) : ViewModelProvider.Factory {
