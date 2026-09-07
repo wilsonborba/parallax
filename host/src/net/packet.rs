@@ -92,11 +92,7 @@ pub fn packetize_frame(stream_id: u32, encoded_frame: &EncodedFrame) -> Vec<UdpP
     let total_packets = chunk_count(encoded_frame.data.len(), MAX_PAYLOAD_SIZE);
     let mut packets = Vec::with_capacity(total_packets as usize);
 
-    for (index, chunk) in encoded_frame
-        .data
-        .chunks(MAX_PAYLOAD_SIZE)
-        .enumerate()
-    {
+    for (index, chunk) in encoded_frame.data.chunks(MAX_PAYLOAD_SIZE).enumerate() {
         let packet_id = index as u16;
         let mut packet_flags = flags;
         if packet_id == total_packets - 1 {
