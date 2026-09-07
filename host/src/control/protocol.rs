@@ -30,6 +30,8 @@ pub enum MessageType {
     AddVirtualDisplay = 0x32,
     RemoveVirtualDisplay = 0x33,
     DisplayOpAck = 0x34,
+    ClientLog = 0x40,
+    ClientLogAck = 0x41,
     Error = 0x7f,
 }
 
@@ -60,6 +62,8 @@ impl TryFrom<u8> for MessageType {
             0x32 => Ok(Self::AddVirtualDisplay),
             0x33 => Ok(Self::RemoveVirtualDisplay),
             0x34 => Ok(Self::DisplayOpAck),
+            0x40 => Ok(Self::ClientLog),
+            0x41 => Ok(Self::ClientLogAck),
             0x7f => Ok(Self::Error),
             other => Err(format!("Unknown message type: {other}")),
         }
@@ -82,10 +86,7 @@ impl Frame {
 
     pub fn encode(&self) -> Result<Vec<u8>, String> {
         if self.payload.len() > MAX_PAYLOAD_LEN {
-            return Err(format!(
-                "Payload too large: {} bytes",
-                self.payload.len()
-            ));
+            return Err(format!("Payload too large: {} bytes", self.payload.len()));
         }
 
         let mut bytes = Vec::with_capacity(HEADER_LEN + self.payload.len());
@@ -106,10 +107,7 @@ pub fn read_frame(stream: &mut TcpStream) -> Result<Option<Frame>, String> {
     }
 
     if header[0] != PROTOCOL_VERSION {
-        return Err(format!(
-            "Unsupported protocol version: {}",
-            header[0]
-        ));
+        return Err(format!("Unsupported protocol version: {}", header[0]));
     }
 
     let message_type = MessageType::try_from(header[1])?;

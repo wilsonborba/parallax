@@ -16,6 +16,7 @@
         android:theme="@style/Theme.Receiver">
         <activity
             android:name=".presentation.ui.MainActivity"
+            android:documentLaunchMode="always"
             android:exported="true"
             android:label="@string/app_name"
             android:resizeableActivity="true"
@@ -27,6 +28,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".presentation.ui.StreamWindowActivity"
+            android:documentLaunchMode="always"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:resizeableActivity="true"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.Receiver" />
     </application>
 
 </manifest>
