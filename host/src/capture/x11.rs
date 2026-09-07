@@ -1,3 +1,4 @@
+use std::env;
 use std::ffi::CString;
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -7,6 +8,8 @@ use x11::xfixes;
 use x11::xlib;
 use x11::xrender;
 use x11::xshm;
+
+use crate::display;
 
 // X11 errors are async; MIT-SHM failures (BadShmSeg) can otherwise kill the process.
 // We trap X errors around XShmGetImage and fall back to XGetImage.
@@ -36,6 +39,8 @@ struct ShmState {
 pub struct X11Capture {
     display: *mut xlib::Display,
     root: xlib::Window,
+    capture_x: i32,
+    capture_y: i32,
     width: u32,
     height: u32,
     use_xshm: bool,
@@ -54,11 +59,19 @@ pub fn init(config: X11CaptureConfig) -> Result<X11Capture, String> {
         return Err("X11 display cannot be empty".to_string());
     }
 
-    let c_display = CString::new(config.display.clone())
+    let selector = config.display.trim().to_string();
+    let region = display::resolve_capture_region(&selector)?;
+    let x_display = if selector.starts_with(':') {
+        selector.clone()
+    } else {
+        env::var("DISPLAY").unwrap_or_else(|_| ":0".to_string())
+    };
+
+    let c_display = CString::new(x_display.clone())
         .map_err(|_| "X11 display contains an interior null byte".to_string())?;
     let display = unsafe { xlib::XOpenDisplay(c_display.as_ptr()) };
     if display.is_null() {
-        return Err(format!("Failed to open X11 display {}", config.display));
+        return Err(format!("Failed to open X11 display {x_display}"));
     }
 
     let screen = unsafe { xlib::XDefaultScreen(display) };
@@ -66,12 +79,33 @@ pub fn init(config: X11CaptureConfig) -> Result<X11Capture, String> {
     let screen_width = unsafe { xlib::XDisplayWidth(display, screen) } as u32;
     let screen_height = unsafe { xlib::XDisplayHeight(display, screen) } as u32;
 
-    let width = screen_width;
-    let height = screen_height;
+    let (capture_x, capture_y, width, height, target_label) = match region {
+        Some(region) => {
+            let width = region.width;
+            let height = region.height;
+            if width == 0 || height == 0 {
+                return Err(format!("Capture region {} has invalid size", region.id));
+            }
+            if region.x >= 0
+                && region.y >= 0
+                && ((region.x as i64 + width as i64) > screen_width as i64
+                    || (region.y as i64 + height as i64) > screen_height as i64)
+            {
+                return Err(format!(
+                    "Capture region {}={}x{}+{}+{} exceeds X11 root {}x{}",
+                    region.id, width, height, region.x, region.y, screen_width, screen_height
+                ));
+            }
+            (region.x, region.y, width, height, region.id)
+        }
+        None => (0, 0, screen_width, screen_height, selector.clone()),
+    };
 
     let mut capture = X11Capture {
         display,
         root,
+        capture_x,
+        capture_y,
         width,
         height,
         use_xshm: false,
@@ -80,8 +114,8 @@ pub fn init(config: X11CaptureConfig) -> Result<X11Capture, String> {
     };
 
     println!(
-        "Configuring X11 capture for display {} at {}x{}",
-        config.display, width, height
+        "Configuring X11 capture for target {} on {} at {}x{}+{}+{}",
+        target_label, x_display, width, height, capture_x, capture_y
     );
 
     if unsafe { xshm::XShmQueryExtension(display) } != 0 {
@@ -115,9 +149,7 @@ pub fn init(config: X11CaptureConfig) -> Result<X11Capture, String> {
         capture.cursor_capture = CursorCapture::XFixes;
         println!("XFixes cursor capture enabled; compositing cursor into frames.");
     } else if xrender_supported {
-        println!(
-            "XRender extension detected but XFixes is unavailable; cursor capture disabled."
-        );
+        println!("XRender extension detected but XFixes is unavailable; cursor capture disabled.");
     } else {
         println!("No XFixes/XRender cursor support detected; cursor capture disabled.");
     }
@@ -126,7 +158,7 @@ pub fn init(config: X11CaptureConfig) -> Result<X11Capture, String> {
 }
 
 impl X11Capture {
-    /// Capture a single frame from the primary display.
+    /// Capture a single frame from the current display target.
     ///
     /// Returns (pixel bytes, width, height) where pixels are in BGRA 8-bit format
     /// (native X11 32-bit pixel layout for common visuals).
@@ -158,7 +190,14 @@ impl X11Capture {
             unsafe { xlib::XSync(self.display, xlib::False) };
 
             let status = unsafe {
-                xshm::XShmGetImage(self.display, self.root, shm.image, 0, 0, all_planes_shm)
+                xshm::XShmGetImage(
+                    self.display,
+                    self.root,
+                    shm.image,
+                    self.capture_x,
+                    self.capture_y,
+                    all_planes_shm,
+                )
             };
 
             // Force server to process and deliver any error for the call above.
@@ -197,8 +236,8 @@ impl X11Capture {
             xlib::XGetImage(
                 self.display,
                 self.root,
-                0,
-                0,
+                self.capture_x,
+                self.capture_y,
                 self.width,
                 self.height,
                 all_planes_get,
@@ -367,8 +406,8 @@ impl X11Capture {
             return;
         }
 
-        let origin_x = i32::from(cursor_ref.x) - i32::from(cursor_ref.xhot);
-        let origin_y = i32::from(cursor_ref.y) - i32::from(cursor_ref.yhot);
+        let origin_x = i32::from(cursor_ref.x) - i32::from(cursor_ref.xhot) - self.capture_x;
+        let origin_y = i32::from(cursor_ref.y) - i32::from(cursor_ref.yhot) - self.capture_y;
 
         let frame_width_i32 = *frame_width as i32;
         let frame_height_i32 = *frame_height as i32;
@@ -398,8 +437,7 @@ impl X11Capture {
                 let src_g = ((argb >> 8) & 0xFF) as u8;
                 let src_b = (argb & 0xFF) as u8;
 
-                let dest_index =
-                    ((dest_y as u32 * *frame_width + dest_x as u32) * 4) as usize;
+                let dest_index = ((dest_y as u32 * *frame_width + dest_x as u32) * 4) as usize;
 
                 if dest_index + 3 >= buffer.len() {
                     continue;

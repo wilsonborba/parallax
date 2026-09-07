@@ -172,6 +172,19 @@ class ControlClient(
             }
         }
 
+        fun sendClientLog(level: String, message: String) {
+            val safeLevel = level.uppercase().ifBlank { "INFO" }
+            val safeMessage = message.replace('\n', ' ').take(MAX_CLIENT_LOG_CHARS)
+            val payload = "level=$safeLevel\nmessage=$safeMessage".toByteArray()
+            writeFrame(MessageType.ClientLog, payload)
+            val response = readFrame()
+            when (response.messageType) {
+                MessageType.ClientLogAck -> Unit
+                MessageType.Error -> throw IllegalStateException(response.payload.decodeToString())
+                else -> throw IllegalStateException("Unexpected response to client log: ${response.messageType}")
+            }
+        }
+
         fun close() {
             socket.close()
         }
@@ -229,6 +242,11 @@ class ControlClient(
             val messageType = MessageType.fromByte(header[1])
             val payloadLen = ((header[2].toInt() and 0xff) shl 8) or (header[3].toInt() and 0xff)
             val payload = if (payloadLen > 0) input.readExact(payloadLen) else ByteArray(0)
+            logger.debug(
+                TAG,
+                "Control frame received",
+                mapOf("messageType" to messageType.name, "payloadLen" to payloadLen),
+            )
             return Frame(messageType, payload)
         }
 
@@ -247,6 +265,11 @@ class ControlClient(
                 output.write(payload)
             }
             output.flush()
+            logger.debug(
+                TAG,
+                "Control frame sent",
+                mapOf("messageType" to messageType.name, "payloadLen" to payload.size),
+            )
         }
 
         private fun parseDisplaysPayload(raw: String): DisplaysSnapshot {
@@ -341,6 +364,7 @@ class ControlClient(
         private const val PROTOCOL_VERSION: Byte = 1
         private const val HEADER_LEN = 4
         private const val MAX_PAYLOAD_LEN = 0xFFFF
+        private const val MAX_CLIENT_LOG_CHARS = 1024
         private const val DEFAULT_TIMEOUT_MS = 5_000
         private const val PBKDF2_ITERATIONS = 100_000
         private const val KEY_LEN_BYTES = 32
@@ -398,6 +422,8 @@ class ControlClient(
         AddVirtualDisplay(0x32),
         RemoveVirtualDisplay(0x33),
         DisplayOpAck(0x34),
+        ClientLog(0x40),
+        ClientLogAck(0x41),
         Error(0x7f),
         ;
 

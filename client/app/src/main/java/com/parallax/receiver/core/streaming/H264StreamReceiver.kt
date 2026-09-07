@@ -39,10 +39,15 @@ class H264StreamReceiver(
     fun start(
         port: Int,
         surface: Surface,
+        streamId: Long = 1L,
         width: Int = defaultWidth,
         height: Int = defaultHeight,
     ) {
-        logger.info(TAG, "startStream invoked", mapOf("port" to port, "width" to width, "height" to height))
+        logger.info(
+            TAG,
+            "startStream invoked",
+            mapOf("port" to port, "streamId" to streamId, "width" to width, "height" to height),
+        )
         stop()
         receiveJob = coroutineScope.launch {
             val buffer = ByteArray(MAX_PACKET_SIZE)
@@ -81,7 +86,7 @@ class H264StreamReceiver(
                             loggedFirstPacket = true
                         }
                         packetCount += 1
-                        val framePayload = frameAssembler.onPacket(packet.data, packet.length) ?: continue
+                        val framePayload = frameAssembler.onPacket(packet.data, packet.length, streamId) ?: continue
                         if ((framePayload.flags and FLAG_DISCONTINUITY) != 0) {
                             pendingConfig = null
                             configSent = false
@@ -215,7 +220,6 @@ class H264StreamReceiver(
         private const val HEADER_LENGTH = 24
         private const val VERSION = 1
         private const val MAX_IN_FLIGHT_FRAMES = 60
-        private const val STREAM_ID = 1L
         private const val PAYLOAD_TYPE_VIDEO = 0x01
         private const val FLAG_KEYFRAME = 1 shl 0
         private const val FLAG_CONFIG = 1 shl 1
@@ -247,7 +251,7 @@ class H264StreamReceiver(
             }
         }
 
-        fun onPacket(bytes: ByteArray, length: Int): FramePayload? {
+        fun onPacket(bytes: ByteArray, length: Int, expectedStreamId: Long): FramePayload? {
             if (length < HEADER_LENGTH) {
                 logger.warn(TAG, "Dropping packet: too small", mapOf("length" to length))
                 return null
@@ -261,11 +265,11 @@ class H264StreamReceiver(
                 )
                 return null
             }
-            if (header.streamId != STREAM_ID) {
+            if (header.streamId != expectedStreamId) {
                 logger.warn(
                     TAG,
                     "Dropping packet: unexpected stream id",
-                    mapOf("streamId" to header.streamId),
+                    mapOf("streamId" to header.streamId, "expectedStreamId" to expectedStreamId),
                 )
                 return null
             }

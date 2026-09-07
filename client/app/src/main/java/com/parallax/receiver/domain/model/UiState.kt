@@ -10,4 +10,6 @@ data class UiState(
     val topologyBusy: Boolean = false,
     val topologyStatus: String? = null,
     val statsOverlayEnabled: Boolean = false,
+    val receiverRunning: Boolean = false,
+    val debugLogs: List<String> = emptyList(),
 )
