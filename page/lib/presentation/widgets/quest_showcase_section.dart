@@ -72,57 +72,77 @@ class QuestShowcaseSection extends StatelessWidget {
                     bottom: 24,
                     left: 24,
                     right: 24,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Flexible(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: isDark
-                                      ? const Color(0xFFD7FF3F)
-                                      : Colors.white,
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  badge,
-                                  style: theme.textTheme.labelSmall?.copyWith(
-                                    color: Colors.black,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 1.1,
-                                    fontSize: 10,
-                                  ),
+                    child: LayoutBuilder(
+                      builder: (context, bannerConstraints) {
+                        final isNarrow = bannerConstraints.maxWidth < 420;
+
+                        final badgeAndTitle = Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? const Color(0xFFD7FF3F)
+                                    : Colors.white,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                badge,
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: Colors.black,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 1.1,
+                                  fontSize: 10,
                                 ),
                               ),
-                              const SizedBox(height: 8),
-                              Text(
-                                "Meta Quest 3S & Quest 3",
-                                style: theme.textTheme.titleLarge?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.white,
-                                  letterSpacing: -0.5,
-                                ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              "Meta Quest 3S & Quest 3",
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                                letterSpacing: -0.5,
                               ),
-                            ],
-                          ),
-                        ),
-                        NeonButton(
+                            ),
+                          ],
+                        );
+
+                        final specsButton = NeonButton(
                           label: l10n?.questLinkSpecs ?? "Meta Quest 3S",
                           icon: const Icon(Icons.open_in_new, size: 14),
                           onPressed: () => _openUrl(
                             context,
                             "https://www.meta.com/quest/quest-3s/",
                           ),
-                        ),
-                      ],
+                        );
+
+                        if (isNarrow) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              badgeAndTitle,
+                              const SizedBox(height: 12),
+                              specsButton,
+                            ],
+                          );
+                        }
+
+                        return Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Flexible(child: badgeAndTitle),
+                            specsButton,
+                          ],
+                        );
+                      },
                     ),
                   ),
                 ],
