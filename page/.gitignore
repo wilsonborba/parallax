@@ -46,3 +46,6 @@ app.*.map.json
 
 # Local deploy scripts
 scripts/
+
+# Regenerated at deploy time from ../install.sh (see scripts/app_prod_deploy.sh)
+web/install.sh
