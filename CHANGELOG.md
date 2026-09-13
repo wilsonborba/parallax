@@ -6,6 +6,7 @@
 - *(landing_page)* Adjusted logos icon
 - *(streaming)* Refine host and receiver streaming session and packaging
 - *(page)* Align landing page with Asodya design, add theme switch, i18n, and prod deploy
+- *(page)* Refine spatial design, use official Asodya icon, and integrate Meta Quest 3S assets
 
 ### 🐛 Bug Fixes
 
@@ -20,6 +21,7 @@
 - *(deploy)* Implemented install process for curl to query on main
 - *(deploy)* Implemented open two screen
 - *(web)* Remove custom loading shell from index.html
+- Update CHANGELOG.md
 ## [0.0.1] - 2026-02-07
 
 ### 🚀 Features

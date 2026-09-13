@@ -416,6 +416,49 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get footerCopyright => '© 2026 Asodya. Todos os direitos reservados.';
+
+  @override
+  String get questSectionTitle => 'Dispositivos Alvo: Ecossistema Meta Quest';
+
+  @override
+  String get questSectionSubtitle =>
+      'Projetado para Meta Quest 3, Quest 3S e clientes Android XR com streaming UDP de baixa latência e alta taxa de quadros.';
+
+  @override
+  String get questOptimizedBadge => 'OTIMIZADO PARA META QUEST 3 & QUEST 3S';
+
+  @override
+  String get questCard1Title => 'Pipeline Sem Fio no Meta Quest 3S';
+
+  @override
+  String get questCard1Desc =>
+      'Transmita a área de trabalho Linux em resolução máxima via Wi-Fi 6E com latência ultrabaixa.';
+
+  @override
+  String get questCard2Title => 'Espaço de Trabalho Espacial Imersivo';
+
+  @override
+  String get questCard2Desc =>
+      'Transforme seu terminal, IDE e múltiplos monitores em displays espaciais flutuantes no seu ambiente físico.';
+
+  @override
+  String get questCard3Title => 'Decodificação Acelerada por Hardware';
+
+  @override
+  String get questCard3Desc =>
+      'Pipeline nativo de decodificação H.264 no chip Snapdragon XR2 Gen 2 sem emulação de CPU.';
+
+  @override
+  String get questLinkSpecs => 'Especificações Meta Quest 3S';
+
+  @override
+  String get questLinkDev => 'Centro de Desenvolvedores Meta Quest';
+
+  @override
+  String get questLinkAdb => 'Guia de Sideload & ADB';
+
+  @override
+  String get questLinkSidequest => 'Comunidade SideQuest';
 }
 
 /// The translations for Portuguese, as used in Brazil (`pt_BR`).
@@ -830,4 +873,47 @@ class AppLocalizationsPtBr extends AppLocalizationsPt {
 
   @override
   String get footerCopyright => '© 2026 Asodya. Todos os direitos reservados.';
+
+  @override
+  String get questSectionTitle => 'Dispositivos Alvo: Ecossistema Meta Quest';
+
+  @override
+  String get questSectionSubtitle =>
+      'Projetado para Meta Quest 3, Quest 3S e clientes Android XR com streaming UDP de baixa latência e alta taxa de quadros.';
+
+  @override
+  String get questOptimizedBadge => 'OTIMIZADO PARA META QUEST 3 & QUEST 3S';
+
+  @override
+  String get questCard1Title => 'Pipeline Sem Fio no Meta Quest 3S';
+
+  @override
+  String get questCard1Desc =>
+      'Transmita a área de trabalho Linux em resolução máxima via Wi-Fi 6E com latência ultrabaixa.';
+
+  @override
+  String get questCard2Title => 'Espaço de Trabalho Espacial Imersivo';
+
+  @override
+  String get questCard2Desc =>
+      'Transforme seu terminal, IDE e múltiplos monitores em displays espaciais flutuantes no seu ambiente físico.';
+
+  @override
+  String get questCard3Title => 'Decodificação Acelerada por Hardware';
+
+  @override
+  String get questCard3Desc =>
+      'Pipeline nativo de decodificação H.264 no chip Snapdragon XR2 Gen 2 sem emulação de CPU.';
+
+  @override
+  String get questLinkSpecs => 'Especificações Meta Quest 3S';
+
+  @override
+  String get questLinkDev => 'Centro de Desenvolvedores Meta Quest';
+
+  @override
+  String get questLinkAdb => 'Guia de Sideload & ADB';
+
+  @override
+  String get questLinkSidequest => 'Comunidade SideQuest';
 }
