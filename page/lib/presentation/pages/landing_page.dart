@@ -219,8 +219,12 @@ class _LandingPageState extends State<LandingPage> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         // Top row: copyright | ecosystem label
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        Wrap(
+                          alignment: WrapAlignment.spaceBetween,
+                          runAlignment: WrapAlignment.center,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 12,
+                          runSpacing: 6,
                           children: [
                             Text(
                               l10n?.footerCopyright ?? "© 2026 Asodya. All rights reserved.",
