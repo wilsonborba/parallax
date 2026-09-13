@@ -80,7 +80,7 @@
   "gettingStartedSubtitle": "Escolha um método de instalação para executar o Parallax no seu host Linux.",
   "sample1Title": "Instalação em comando único (Debian/Ubuntu)",
   "sample1Caption": "Instala dependências, binários, comando CLI e inicializador desktop.",
-  "sample2Title": "URL do instalador no Cloudflare Pages",
+  "sample2Title": "Instalador web",
   "sample2Caption": "Instalador publicado como asset estático em parallax.asodya.com.",
   "sample3Title": "Instalação via Cargo",
   "sample3Caption": "Alternativa para desenvolvedores Rust usando o Cargo.",

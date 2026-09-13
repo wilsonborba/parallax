@@ -276,11 +276,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'Installs dependencies, binaries, CLI command, and desktop launcher.';
 
   @override
-  String get sample2Title => 'Cloudflare Pages installer URL';
+  String get sample2Title => 'Web installer';
 
   @override
   String get sample2Caption =>
-      'Installer published as a Flutter web asset from page/install.sh.';
+      'Always-fresh installer served directly from parallax.asodya.com.';
 
   @override
   String get sample3Title => 'Cargo install flow';

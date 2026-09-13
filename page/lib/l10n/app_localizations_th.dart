@@ -275,7 +275,7 @@ class AppLocalizationsTh extends AppLocalizations {
       'ติดตั้งการอ้างอิง ไบนารี คำสั่ง CLI และตัวเปิดใช้งานเดสก์ท็อป';
 
   @override
-  String get sample2Title => 'URL ตัวติดตั้ง Cloudflare Pages';
+  String get sample2Title => 'ตัวติดตั้งเว็บ';
 
   @override
   String get sample2Caption =>

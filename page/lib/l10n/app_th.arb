@@ -80,7 +80,7 @@
   "gettingStartedSubtitle": "เลือกวิธีการติดตั้งเพื่อติดตั้ง Parallax บนเครื่อง Linux โฮสต์ของคุณ",
   "sample1Title": "ติดตั้งด้วยคำสั่งเดียว (Debian/Ubuntu)",
   "sample1Caption": "ติดตั้งการอ้างอิง ไบนารี คำสั่ง CLI และตัวเปิดใช้งานเดสก์ท็อป",
-  "sample2Title": "URL ตัวติดตั้ง Cloudflare Pages",
+  "sample2Title": "ตัวติดตั้งเว็บ",
   "sample2Caption": "ตัวติดตั้งเผยแพร่เป็นไฟล์สแตติกที่ parallax.asodya.com",
   "sample3Title": "การติดตั้งผ่าน Cargo",
   "sample3Caption": "ทางเลือกสำหรับผู้ใช้ที่ต้องการสร้างด้วย Cargo (Rust)",

@@ -584,13 +584,13 @@ abstract class AppLocalizations {
   /// No description provided for @sample2Title.
   ///
   /// In en, this message translates to:
-  /// **'Cloudflare Pages installer URL'**
+  /// **'Web installer'**
   String get sample2Title;
 
   /// No description provided for @sample2Caption.
   ///
   /// In en, this message translates to:
-  /// **'Installer published as a Flutter web asset from page/install.sh.'**
+  /// **'Always-fresh installer served directly from parallax.asodya.com.'**
   String get sample2Caption;
 
   /// No description provided for @sample3Title.

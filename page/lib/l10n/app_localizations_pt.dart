@@ -281,7 +281,7 @@ class AppLocalizationsPt extends AppLocalizations {
       'Instala dependências, binários, comando CLI e inicializador desktop.';
 
   @override
-  String get sample2Title => 'URL do instalador no Cloudflare Pages';
+  String get sample2Title => 'Instalador web';
 
   @override
   String get sample2Caption =>
@@ -738,7 +738,7 @@ class AppLocalizationsPtBr extends AppLocalizationsPt {
       'Instala dependências, binários, comando CLI e inicializador desktop.';
 
   @override
-  String get sample2Title => 'URL do instalador no Cloudflare Pages';
+  String get sample2Title => 'Instalador web';
 
   @override
   String get sample2Caption =>
