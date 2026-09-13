@@ -432,7 +432,7 @@ class HeroSection extends StatelessWidget {
             children: [
               _HeroInstallCard(
                 title: l10n?.sample1Title ?? "One command (curl + bash)",
-                command: "curl -fsSL https://parallax.asodya.com/assets/install.sh | bash",
+                command: "curl -fsSL https://raw.githubusercontent.com/asodya/parallax/main/install.sh | bash",
                 copyTooltip: l10n?.copyCommand ?? "Copy command",
                 copiedToast: l10n?.commandCopied ?? "Copied to clipboard",
               ),
@@ -1005,11 +1005,6 @@ class GettingStartedSection extends StatelessWidget {
         title: l10n?.sample1Title ?? fallbackSamples[0].title,
         command: fallbackSamples[0].command,
         caption: l10n?.sample1Caption ?? fallbackSamples[0].caption,
-      ),
-      (
-        title: l10n?.sample2Title ?? fallbackSamples[1].title,
-        command: fallbackSamples[1].command,
-        caption: l10n?.sample2Caption ?? fallbackSamples[1].caption,
       ),
       (
         title: l10n?.sample3Title ?? fallbackSamples[2].title,

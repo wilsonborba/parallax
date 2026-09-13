@@ -150,13 +150,6 @@ class LocalLandingRepository implements LandingRepository {
               'Installs dependencies, binaries, CLI command, and desktop launcher.',
         ),
         CodeSample(
-          title: 'Web installer',
-          command:
-              'curl -fsSL https://parallax.asodya.com/assets/install.sh | bash',
-          caption:
-              'Always-fresh installer served directly from parallax.asodya.com.',
-        ),
-        CodeSample(
           title: 'Cargo install flow',
           command: 'cargo install --path host\n./packaging/install-debian.sh',
           caption: 'Alternative for users who prefer a cargo-based flow.',
