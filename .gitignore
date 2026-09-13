@@ -53,3 +53,7 @@ target
 .externalNativeBuild
 .cxx
 local.properties
+
+# Local deploy scripts
+scripts/
+page/scripts/
