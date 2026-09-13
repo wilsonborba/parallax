@@ -241,7 +241,7 @@ class _LandingPageState extends State<LandingPage> {
                         const SizedBox(height: 10),
                         // Bottom line: deploy timestamp in Bangkok time (ICT UTC+7)
                         Text(
-                          "Deployed: $_kBuildTimestamp ICT (UTC+7)",
+                          "$_kBuildTimestamp ICT (UTC+7)",
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
                             letterSpacing: 0.8,
