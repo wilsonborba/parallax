@@ -11,6 +11,7 @@ import "../widgets/glow_card.dart";
 import "../widgets/gradient_text.dart";
 import "../widgets/neon_button.dart";
 import "../widgets/parallax_header.dart";
+import "../widgets/quest_showcase_section.dart";
 import "../widgets/section_header.dart";
 
 class LandingPage extends StatefulWidget {
@@ -34,6 +35,7 @@ class _LandingPageState extends State<LandingPage> {
   final GlobalKey _gettingStartedKey = GlobalKey();
   final GlobalKey _protocolKey = GlobalKey();
   final GlobalKey _roadmapKey = GlobalKey();
+  final GlobalKey _questKey = GlobalKey();
   final GlobalKey _communityKey = GlobalKey();
 
   @override
@@ -76,6 +78,9 @@ class _LandingPageState extends State<LandingPage> {
         break;
       case "roadmap":
         targetKey = _roadmapKey;
+        break;
+      case "quest":
+        targetKey = _questKey;
         break;
       case "community":
         targetKey = _communityKey;
@@ -132,6 +137,11 @@ class _LandingPageState extends State<LandingPage> {
                       l10n: l10n,
                       fallback: fallbackData.architecture,
                     ),
+                  ),
+                  SectionWrapper(
+                    key: _questKey,
+                    scrollOffset: _scrollOffset,
+                    child: QuestShowcaseSection(l10n: l10n),
                   ),
                   SectionWrapper(
                     key: _featuresKey,
@@ -364,6 +374,34 @@ class HeroSection extends StatelessWidget {
             style: theme.textTheme.bodySmall?.copyWith(
               color: colorScheme.onSurfaceVariant,
               letterSpacing: 0.3,
+            ),
+          ),
+          const SizedBox(height: 36),
+
+          // Meta Quest 3S Hero Hardware Visual
+          Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isDark ? const Color(0xFF262626) : const Color(0xFFE5E7EB),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: isDark ? Colors.black.withValues(alpha: 0.5) : Colors.black.withValues(alpha: 0.08),
+                  blurRadius: 28,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: AspectRatio(
+                aspectRatio: 16 / 8,
+                child: Image.asset(
+                  "assets/quest/quest_3s_hero.webp",
+                  fit: BoxFit.cover,
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 48),

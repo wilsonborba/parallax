@@ -59,20 +59,11 @@ class ParallaxHeader extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: isDark ? Colors.white : Colors.black,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        "PRLX",
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: isDark ? Colors.black : Colors.white,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1.5,
-                        ),
-                      ),
+                    Image.asset(
+                      "assets/img/logo.png",
+                      width: 26,
+                      height: 26,
+                      fit: BoxFit.contain,
                     ),
                     const SizedBox(width: 10),
                     Text(
@@ -114,6 +105,10 @@ class ParallaxHeader extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        _NavLink(
+                          label: "Meta Quest",
+                          onTap: () => onNavigateToSection?.call("quest"),
+                        ),
                         _NavLink(
                           label: l10n?.navArchitecture ?? "Architecture",
                           onTap: () => onNavigateToSection?.call("architecture"),

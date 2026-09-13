@@ -814,6 +814,84 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'© 2026 Asodya. All rights reserved.'**
   String get footerCopyright;
+
+  /// No description provided for @questSectionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Target Hardware: Meta Quest Ecosystem'**
+  String get questSectionTitle;
+
+  /// No description provided for @questSectionSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Engineered for Meta Quest 3, Quest 3S, and Android XR clients with low-latency UDP framing and high frame-rate immersion.'**
+  String get questSectionSubtitle;
+
+  /// No description provided for @questOptimizedBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'OPTIMIZED FOR META QUEST 3 & QUEST 3S'**
+  String get questOptimizedBadge;
+
+  /// No description provided for @questCard1Title.
+  ///
+  /// In en, this message translates to:
+  /// **'Meta Quest 3S Wireless Pipeline'**
+  String get questCard1Title;
+
+  /// No description provided for @questCard1Desc.
+  ///
+  /// In en, this message translates to:
+  /// **'Stream full-resolution Linux X11 desktops over local Wi-Fi 6E with sub-20ms motion-to-photon latency.'**
+  String get questCard1Desc;
+
+  /// No description provided for @questCard2Title.
+  ///
+  /// In en, this message translates to:
+  /// **'Spatial Room-Scale Workspace'**
+  String get questCard2Title;
+
+  /// No description provided for @questCard2Desc.
+  ///
+  /// In en, this message translates to:
+  /// **'Transform your terminal, IDE, and multi-monitor workflows into floating spatial displays anywhere in your room.'**
+  String get questCard2Desc;
+
+  /// No description provided for @questCard3Title.
+  ///
+  /// In en, this message translates to:
+  /// **'Hardware-Accelerated Decoding'**
+  String get questCard3Title;
+
+  /// No description provided for @questCard3Desc.
+  ///
+  /// In en, this message translates to:
+  /// **'Snapdragon XR2 Gen 2 native H.264 decode pipeline with zero battery-draining CPU emulation.'**
+  String get questCard3Desc;
+
+  /// No description provided for @questLinkSpecs.
+  ///
+  /// In en, this message translates to:
+  /// **'Meta Quest 3S Specs'**
+  String get questLinkSpecs;
+
+  /// No description provided for @questLinkDev.
+  ///
+  /// In en, this message translates to:
+  /// **'Meta Quest Developer Center'**
+  String get questLinkDev;
+
+  /// No description provided for @questLinkAdb.
+  ///
+  /// In en, this message translates to:
+  /// **'Sideloading & ADB Guide'**
+  String get questLinkAdb;
+
+  /// No description provided for @questLinkSidequest.
+  ///
+  /// In en, this message translates to:
+  /// **'SideQuest Community'**
+  String get questLinkSidequest;
 }
 
 class _AppLocalizationsDelegate

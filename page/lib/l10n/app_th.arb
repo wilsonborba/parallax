@@ -118,5 +118,18 @@
   "communityItem3": "Issues และ Discussions ที่เปิดรับบน GitHub",
   "finalCtaHeadline": "ร่วมสร้างอนาคตของการสตรีม VR",
   "finalCtaSubHeadline": "Parallax เป็นโอเพนซอร์สและกำลังเติบโต — มาร่วมเป็นส่วนหนึ่งของชุมชน",
-  "footerCopyright": "© 2026 Asodya สงวนลิขสิทธิ์"
+  "footerCopyright": "© 2026 Asodya สงวนลิขสิทธิ์",
+  "questSectionTitle": "อุปกรณ์เป้าหมาย: ระบบนิเวศ Meta Quest",
+  "questSectionSubtitle": "ออกแบบมาสำหรับ Meta Quest 3, Quest 3S และไคลเอนต์ Android XR พร้อมการสตรีม UDP ความหน่วงต่ำและการแสดงผลภาพเฟรมเรตสูง",
+  "questOptimizedBadge": "ปรับแต่งมาสำหรับ META QUEST 3 และ QUEST 3S",
+  "questCard1Title": "ระบบสตรีมมิ่งไร้สายบน Meta Quest 3S",
+  "questCard1Desc": "สตรีมเดสก์ท็อป Linux แบบเต็มความละเอียดผ่าน Wi-Fi 6E ด้วยความหน่วงต่ำกว่า 20ms",
+  "questCard2Title": "พื้นที่ทำงานเชิงพื้นที่ลอยในห้อง",
+  "questCard2Desc": "เปลี่ยนเทอร์มินัล, IDE และจอแสดงผลหลายจอของคุณให้กลายเป็นหน้าต่างแสดงผลเชิงพื้นที่ลอยได้ในห้องจริง",
+  "questCard3Title": "การถอดรหัสเร่งความเร็วด้วยฮาร์ดแวร์",
+  "questCard3Desc": "ไปป์ไลน์การถอดรหัส H.264 เนทีฟบนชิป Snapdragon XR2 Gen 2 เพื่อประสิทธิภาพสูงสุดและประหยัดพลังงาน",
+  "questLinkSpecs": "ข้อมูลจำเพาะ Meta Quest 3S",
+  "questLinkDev": "ศูนย์นักพัฒนา Meta Quest",
+  "questLinkAdb": "คู่มือการติดตั้งแอป (Sideload / ADB)",
+  "questLinkSidequest": "ชุมชน SideQuest"
 }
