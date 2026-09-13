@@ -1,5 +1,7 @@
 import "package:flutter/material.dart";
 
+import "../../core/theme/my_themes.dart";
+
 class NeonButton extends StatefulWidget {
   const NeonButton({
     super.key,
@@ -30,12 +32,24 @@ class _NeonButtonState extends State<NeonButton> {
     final Color bgColor;
     final Color textColor;
     final Border? border;
+    List<BoxShadow>? shadows;
 
     if (widget.isPrimary) {
-      bgColor = isDark
-          ? (_hovered ? const Color(0xFFEEEEEE) : const Color(0xFFFFFFFF))
-          : (_hovered ? const Color(0xFF2A2A2A) : const Color(0xFF181818));
-      textColor = isDark ? const Color(0xFF10110E) : const Color(0xFFFFFFFF);
+      if (isDark) {
+        // Dark primary: white → off-white on hover
+        bgColor = _hovered ? const Color(0xFFEEEEEE) : const Color(0xFFFFFFFF);
+        textColor = const Color(0xFF10110E);
+        shadows = _hovered
+            ? [BoxShadow(color: MyThemes.brandLime.withValues(alpha: 0.18), blurRadius: 14, offset: const Offset(0, 3))]
+            : null;
+      } else {
+        // Light primary: brand purple
+        bgColor = _hovered ? const Color(0xFF5C1FAE) : MyThemes.brandPurple;
+        textColor = Colors.white;
+        shadows = _hovered
+            ? [BoxShadow(color: MyThemes.brandPurple.withValues(alpha: 0.30), blurRadius: 14, offset: const Offset(0, 4))]
+            : null;
+      }
       border = null;
     } else {
       bgColor = _hovered
@@ -47,26 +61,20 @@ class _NeonButtonState extends State<NeonButton> {
             ? colorScheme.onSurface.withValues(alpha: 0.4)
             : colorScheme.outline.withValues(alpha: 0.6),
       );
+      shadows = null;
     }
 
     return MouseRegion(
+      cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
+        duration: const Duration(milliseconds: 160),
         decoration: BoxDecoration(
           color: bgColor,
           borderRadius: BorderRadius.circular(10),
           border: border,
-          boxShadow: widget.isPrimary && _hovered
-              ? [
-                  BoxShadow(
-                    color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.15),
-                    blurRadius: 12,
-                    offset: const Offset(0, 3),
-                  ),
-                ]
-              : null,
+          boxShadow: shadows,
         ),
         child: Material(
           color: Colors.transparent,
@@ -80,7 +88,10 @@ class _NeonButtonState extends State<NeonButton> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   if (widget.icon != null) ...[
-                    widget.icon!,
+                    IconTheme(
+                      data: IconThemeData(color: textColor, size: 16),
+                      child: widget.icon!,
+                    ),
                     const SizedBox(width: 8),
                   ],
                   Text(

@@ -4,6 +4,7 @@ import "package:flutter/material.dart";
 import "package:url_launcher/url_launcher.dart";
 
 import "../../core/state/app_scope.dart";
+import "../../core/theme/my_themes.dart";
 import "../../l10n/app_localizations.dart";
 import "neon_button.dart";
 
@@ -42,7 +43,7 @@ class ParallaxHeader extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 24),
           decoration: BoxDecoration(
             color: (isDark ? const Color(0xFF10110E) : const Color(0xFFF7F7F5))
-                .withValues(alpha: 0.85),
+                .withValues(alpha: 0.90),
             border: Border(
               bottom: BorderSide(
                 color: isDark ? const Color(0xFF262626) : const Color(0xFFE5E7EB),
@@ -52,7 +53,7 @@ class ParallaxHeader extends StatelessWidget {
           ),
           child: Row(
             children: [
-              // Logo and Brand
+              // ── Logo & Brand ─────────────────────────────────────
               InkWell(
                 onTap: () => onNavigateToSection?.call("hero"),
                 borderRadius: BorderRadius.circular(8),
@@ -78,7 +79,9 @@ class ParallaxHeader extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
                         border: Border.all(
-                          color: isDark ? const Color(0xFF333333) : const Color(0xFFD1D5DB),
+                          color: isDark
+                              ? const Color(0xFF333333)
+                              : const Color(0xFFD1D5DB),
                         ),
                         borderRadius: BorderRadius.circular(4),
                       ),
@@ -95,48 +98,55 @@ class ParallaxHeader extends StatelessWidget {
                 ),
               ),
 
-              const Spacer(),
-
-              // Navigation Links (Desktop only)
-              if (showNavLinks) ...[
-                Flexible(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _NavLink(
-                          label: "Meta Quest",
-                          onTap: () => onNavigateToSection?.call("quest"),
-                        ),
-                        _NavLink(
-                          label: l10n?.navArchitecture ?? "Architecture",
-                          onTap: () => onNavigateToSection?.call("architecture"),
-                        ),
-                        _NavLink(
-                          label: l10n?.navFeatures ?? "Features",
-                          onTap: () => onNavigateToSection?.call("features"),
-                        ),
-                        _NavLink(
-                          label: l10n?.navHowItWorks ?? "How It Works",
-                          onTap: () => onNavigateToSection?.call("howItWorks"),
-                        ),
-                        _NavLink(
-                          label: l10n?.navGetStarted ?? "Get Started",
-                          onTap: () => onNavigateToSection?.call("gettingStarted"),
-                        ),
-                        _NavLink(
-                          label: l10n?.navProtocol ?? "Protocol",
-                          onTap: () => onNavigateToSection?.call("protocol"),
-                        ),
-                        const SizedBox(width: 12),
-                      ],
+              // ── Nav Links (Desktop — centred) ─────────────────────
+              if (showNavLinks)
+                Expanded(
+                  child: Center(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _NavLink(
+                            label: "Meta Quest",
+                            onTap: () => onNavigateToSection?.call("quest"),
+                            isDark: isDark,
+                          ),
+                          _NavLink(
+                            label: l10n?.navArchitecture ?? "Architecture",
+                            onTap: () => onNavigateToSection?.call("architecture"),
+                            isDark: isDark,
+                          ),
+                          _NavLink(
+                            label: l10n?.navFeatures ?? "Features",
+                            onTap: () => onNavigateToSection?.call("features"),
+                            isDark: isDark,
+                          ),
+                          _NavLink(
+                            label: l10n?.navHowItWorks ?? "How It Works",
+                            onTap: () => onNavigateToSection?.call("howItWorks"),
+                            isDark: isDark,
+                          ),
+                          _NavLink(
+                            label: l10n?.navGetStarted ?? "Get Started",
+                            onTap: () => onNavigateToSection?.call("gettingStarted"),
+                            isDark: isDark,
+                          ),
+                          _NavLink(
+                            label: l10n?.navProtocol ?? "Protocol",
+                            onTap: () => onNavigateToSection?.call("protocol"),
+                            isDark: isDark,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
+                )
+              else
+                const Spacer(),
 
-              // Language Selector Menu
+              // ── Right Controls ────────────────────────────────────
+              // Language Selector
               PopupMenuButton<String>(
                 tooltip: l10n?.navLanguage ?? "Language",
                 icon: Row(
@@ -152,6 +162,7 @@ class ParallaxHeader extends StatelessWidget {
                       controller.locale.languageCode.toUpperCase(),
                       style: theme.textTheme.labelMedium?.copyWith(
                         fontWeight: FontWeight.w600,
+                        color: colorScheme.onSurface,
                       ),
                     ),
                   ],
@@ -159,10 +170,11 @@ class ParallaxHeader extends StatelessWidget {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                   side: BorderSide(
-                    color: isDark ? const Color(0xFF262626) : const Color(0xFFE5E7EB),
+                    color: isDark ? const Color(0xFF333333) : const Color(0xFFE5E7EB),
                   ),
                 ),
                 color: isDark ? const Color(0xFF191A16) : Colors.white,
+                elevation: 8,
                 onSelected: (lang) {
                   if (lang == "en") {
                     controller.setLocale(const Locale("en"));
@@ -173,15 +185,13 @@ class ParallaxHeader extends StatelessWidget {
                   }
                 },
                 itemBuilder: (context) => [
-                  _buildPopupItem("en", "English (EN)", controller.locale.languageCode == "en", theme),
-                  _buildPopupItem("pt", "Português (PT-BR)", controller.locale.languageCode == "pt", theme),
-                  _buildPopupItem("th", "ไทย (TH)", controller.locale.languageCode == "th", theme),
+                  _buildPopupItem("en", "English (EN)", controller.locale.languageCode == "en", theme, isDark),
+                  _buildPopupItem("pt", "Português (PT-BR)", controller.locale.languageCode == "pt", theme, isDark),
+                  _buildPopupItem("th", "ไทย (TH)", controller.locale.languageCode == "th", theme, isDark),
                 ],
               ),
 
-              const SizedBox(width: 8),
-
-              // Theme Toggle Button
+              // Theme Toggle
               IconButton(
                 icon: Icon(
                   isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
@@ -195,7 +205,7 @@ class ParallaxHeader extends StatelessWidget {
               ),
 
               if (showGithubBtn) ...[
-                const SizedBox(width: 12),
+                const SizedBox(width: 8),
                 NeonButton(
                   label: "GitHub",
                   isPrimary: false,
@@ -215,7 +225,9 @@ class ParallaxHeader extends StatelessWidget {
     String label,
     bool isSelected,
     ThemeData theme,
+    bool isDark,
   ) {
+    final accent = isDark ? MyThemes.brandLime : MyThemes.brandPurple;
     return PopupMenuItem<String>(
       value: value,
       child: Row(
@@ -225,15 +237,12 @@ class ParallaxHeader extends StatelessWidget {
               label,
               style: theme.textTheme.bodyMedium?.copyWith(
                 fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
+                color: isSelected ? accent : null,
               ),
             ),
           ),
           if (isSelected)
-            Icon(
-              Icons.check,
-              size: 16,
-              color: theme.colorScheme.primary,
-            ),
+            Icon(Icons.check, size: 16, color: accent),
         ],
       ),
     );
@@ -241,10 +250,15 @@ class ParallaxHeader extends StatelessWidget {
 }
 
 class _NavLink extends StatefulWidget {
-  const _NavLink({required this.label, required this.onTap});
+  const _NavLink({
+    required this.label,
+    required this.onTap,
+    required this.isDark,
+  });
 
   final String label;
   final VoidCallback onTap;
+  final bool isDark;
 
   @override
   State<_NavLink> createState() => _NavLinkState();
@@ -257,21 +271,28 @@ class _NavLinkState extends State<_NavLink> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final accent = widget.isDark ? MyThemes.brandLime : MyThemes.brandPurple;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
-      child: InkWell(
+      child: GestureDetector(
         onTap: widget.onTap,
-        borderRadius: BorderRadius.circular(6),
-        child: Padding(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: _hovered ? accent : Colors.transparent,
+                width: 1.5,
+              ),
+            ),
+          ),
           child: Text(
             widget.label,
             style: theme.textTheme.bodyMedium?.copyWith(
-              color: _hovered
-                  ? colorScheme.onSurface
-                  : colorScheme.onSurfaceVariant,
+              color: _hovered ? colorScheme.onSurface : colorScheme.onSurfaceVariant,
               fontWeight: _hovered ? FontWeight.w600 : FontWeight.w500,
             ),
           ),

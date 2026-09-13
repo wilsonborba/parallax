@@ -1,5 +1,7 @@
 import "package:flutter/material.dart";
 
+import "../../core/theme/my_themes.dart";
+
 class SectionHeader extends StatelessWidget {
   const SectionHeader({
     super.key,
@@ -16,6 +18,9 @@ class SectionHeader extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
 
+    // Dark → brand lime bar · Light → brand purple bar
+    final accentBar = isDark ? MyThemes.brandLime : MyThemes.brandPurple;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -30,9 +35,9 @@ class SectionHeader extends StatelessWidget {
         const SizedBox(height: 12),
         Container(
           height: 2,
-          width: 56,
+          width: 48,
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFFD7FF3F) : const Color(0xFF181818),
+            color: accentBar,
             borderRadius: BorderRadius.circular(2),
           ),
         ),

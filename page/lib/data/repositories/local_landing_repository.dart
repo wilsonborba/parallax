@@ -150,11 +150,11 @@ class LocalLandingRepository implements LandingRepository {
               'Installs dependencies, binaries, CLI command, and desktop launcher.',
         ),
         CodeSample(
-          title: 'Cloudflare Pages installer URL',
+          title: 'Web installer',
           command:
               'curl -fsSL https://parallax.asodya.com/assets/install.sh | bash',
           caption:
-              'Installer published as a Flutter web asset from page/install.sh.',
+              'Always-fresh installer served directly from parallax.asodya.com.',
         ),
         CodeSample(
           title: 'Cargo install flow',

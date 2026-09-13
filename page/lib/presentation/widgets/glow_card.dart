@@ -1,5 +1,7 @@
 import "package:flutter/material.dart";
 
+import "../../core/theme/my_themes.dart";
+
 class GlowCard extends StatefulWidget {
   const GlowCard({
     super.key,
@@ -25,8 +27,10 @@ class _GlowCardState extends State<GlowCard> {
     final colorScheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
 
+    final accent = isDark ? MyThemes.brandLime : MyThemes.brandPurple;
+
     final borderColor = _hovered
-        ? colorScheme.onSurface.withValues(alpha: 0.35)
+        ? accent.withValues(alpha: isDark ? 0.45 : 0.35)
         : colorScheme.outline.withValues(alpha: isDark ? 0.4 : 0.7);
 
     final cardBg = theme.cardTheme.color ?? colorScheme.surface;
@@ -43,10 +47,10 @@ class _GlowCardState extends State<GlowCard> {
           border: Border.all(color: borderColor, width: 1),
           boxShadow: [
             BoxShadow(
-              color: isDark
-                  ? Colors.black.withValues(alpha: _hovered ? 0.35 : 0.15)
-                  : Colors.black.withValues(alpha: _hovered ? 0.08 : 0.03),
-              blurRadius: _hovered ? 20 : 10,
+              color: _hovered
+                  ? accent.withValues(alpha: isDark ? 0.08 : 0.06)
+                  : Colors.black.withValues(alpha: isDark ? 0.15 : 0.03),
+              blurRadius: _hovered ? 22 : 10,
               offset: const Offset(0, 4),
             ),
           ],
