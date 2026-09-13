@@ -14,6 +14,13 @@ import "../widgets/parallax_header.dart";
 import "../widgets/quest_showcase_section.dart";
 import "../widgets/section_header.dart";
 
+// Baked in at build time via --dart-define=BUILD_TIMESTAMP="YYYY-MM-DD HH:MM +07"
+// Falls back to 'dev build' when running locally with `flutter run`.
+const String _kBuildTimestamp = String.fromEnvironment(
+  'BUILD_TIMESTAMP',
+  defaultValue: 'dev build',
+);
+
 class LandingPage extends StatefulWidget {
   const LandingPage({super.key, required this.viewModel});
 
@@ -200,7 +207,7 @@ class _LandingPageState extends State<LandingPage> {
                   ),
                   // Footer
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 32),
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
                     decoration: BoxDecoration(
                       border: Border(
                         top: BorderSide(
@@ -208,18 +215,19 @@ class _LandingPageState extends State<LandingPage> {
                         ),
                       ),
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          l10n?.footerCopyright ?? "© 2026 Asodya. All rights reserved.",
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                        ),
+                        // Top row: copyright | ecosystem label
                         Row(
-                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
+                            Text(
+                              l10n?.footerCopyright ?? "© 2026 Asodya. All rights reserved.",
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
                             Text(
                               "ASODYA ECOSYSTEM",
                               style: theme.textTheme.labelSmall?.copyWith(
@@ -229,6 +237,16 @@ class _LandingPageState extends State<LandingPage> {
                               ),
                             ),
                           ],
+                        ),
+                        const SizedBox(height: 10),
+                        // Bottom line: deploy timestamp in Bangkok time (ICT UTC+7)
+                        Text(
+                          "Deployed: $_kBuildTimestamp ICT (UTC+7)",
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                            letterSpacing: 0.8,
+                            fontSize: 10,
+                          ),
                         ),
                       ],
                     ),
