@@ -385,7 +385,14 @@ class HeroSection extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
+
+          // Inline install pill — click to copy
+          _InstallPill(
+            command: "curl -fsSL https://parallax.asodya.com/install.sh | bash",
+            copiedToast: l10n?.commandCopied ?? "Copied to clipboard",
+          ),
+          const SizedBox(height: 12),
 
           Text(
             microText,
@@ -395,6 +402,7 @@ class HeroSection extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 36),
+
 
           // Meta Quest 3S Hero Hardware Visual
           Container(
@@ -456,7 +464,99 @@ class HeroSection extends StatelessWidget {
   }
 }
 
+class _InstallPill extends StatefulWidget {
+  const _InstallPill({required this.command, required this.copiedToast});
+  final String command;
+  final String copiedToast;
+  @override
+  State<_InstallPill> createState() => _InstallPillState();
+}
+
+class _InstallPillState extends State<_InstallPill> {
+  bool _copied = false;
+  bool _hovered = false;
+
+  Future<void> _copy() async {
+    _copyCommand(context, widget.command, widget.copiedToast);
+    setState(() => _copied = true);
+    await Future.delayed(const Duration(seconds: 2));
+    if (mounted) setState(() => _copied = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final colorScheme = theme.colorScheme;
+    final accent = isDark ? const Color(0xFFD7FF3F) : const Color(0xFF7027C8);
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 480),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: GestureDetector(
+          onTap: _copy,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? const Color(0xFF191A16)
+                  : const Color(0xFFF3F4F6),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: _hovered
+                    ? accent.withValues(alpha: 0.5)
+                    : (isDark ? const Color(0xFF333333) : const Color(0xFFD1D5DB)),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  "\$",
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontFamily: "monospace",
+                    color: accent,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    widget.command,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontFamily: "monospace",
+                      color: colorScheme.onSurface,
+                      fontSize: 11.5,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  child: _copied
+                      ? Icon(Icons.check, size: 14, color: accent, key: const ValueKey("check"))
+                      : Icon(Icons.copy_outlined, size: 14,
+                          color: colorScheme.onSurfaceVariant,
+                          key: const ValueKey("copy")),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _HeroInstallCard extends StatelessWidget {
+
   const _HeroInstallCard({
     required this.title,
     required this.command,
@@ -1007,14 +1107,14 @@ class GettingStartedSection extends StatelessWidget {
         caption: l10n?.sample1Caption ?? fallbackSamples[0].caption,
       ),
       (
-        title: l10n?.sample3Title ?? fallbackSamples[2].title,
-        command: fallbackSamples[2].command,
-        caption: l10n?.sample3Caption ?? fallbackSamples[2].caption,
+        title: l10n?.sample3Title ?? fallbackSamples[1].title,
+        command: fallbackSamples[1].command,
+        caption: l10n?.sample3Caption ?? fallbackSamples[1].caption,
       ),
       (
-        title: l10n?.sample4Title ?? fallbackSamples[3].title,
-        command: fallbackSamples[3].command,
-        caption: l10n?.sample4Caption ?? fallbackSamples[3].caption,
+        title: l10n?.sample4Title ?? fallbackSamples[2].title,
+        command: fallbackSamples[2].command,
+        caption: l10n?.sample4Caption ?? fallbackSamples[2].caption,
       ),
     ];
 
