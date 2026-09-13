@@ -1,3 +1,4 @@
+import "package:flutter/material.dart";
 import '../../domain/entities/landing_data.dart';
 import '../../domain/repositories/landing_repository.dart';
 
@@ -91,27 +92,27 @@ class LocalLandingRepository implements LandingRepository {
         FeatureItem(
           title: 'Low-latency UDP streaming',
           description: 'Minimal framing protocol for speed and resilience.',
-          icon: '⚡',
+          iconData: Icons.bolt_outlined,
         ),
         FeatureItem(
           title: 'Secure pairing',
           description: 'Control channel uses pairing tokens and QR workflow.',
-          icon: '🔐',
+          iconData: Icons.lock_outlined,
         ),
         FeatureItem(
           title: 'Open protocol',
           description: 'UDP packet structure documented and extensible.',
-          icon: '🧩',
+          iconData: Icons.extension_outlined,
         ),
         FeatureItem(
           title: 'Host UI',
           description: 'Desktop UI for pairing and session control.',
-          icon: '🖥️',
+          iconData: Icons.desktop_windows_outlined,
         ),
         FeatureItem(
           title: 'Android client',
           description: 'Jetpack Compose app that scans QR to connect.',
-          icon: '📱',
+          iconData: Icons.phone_android_outlined,
         ),
       ],
       steps: [

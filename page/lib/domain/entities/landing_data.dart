@@ -1,3 +1,5 @@
+import "package:flutter/material.dart";
+
 class LandingData {
   const LandingData({
     required this.hero,
@@ -99,12 +101,14 @@ class FeatureItem {
   const FeatureItem({
     required this.title,
     required this.description,
-    required this.icon,
+    this.icon = "",
+    this.iconData,
   });
 
   final String title;
   final String description;
   final String icon;
+  final IconData? iconData;
 }
 
 class StepItem {

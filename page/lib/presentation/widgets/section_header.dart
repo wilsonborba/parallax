@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import "package:flutter/material.dart";
 
 class SectionHeader extends StatelessWidget {
   const SectionHeader({
@@ -12,40 +12,37 @@ class SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           title,
-          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
+          style: theme.textTheme.headlineMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: colorScheme.onSurface,
+            letterSpacing: -0.5,
+          ),
         ),
         const SizedBox(height: 12),
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 1200),
-          curve: Curves.easeInOut,
-          height: 3,
-          width: 120,
+        Container(
+          height: 2,
+          width: 56,
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                colorScheme.primary,
-                colorScheme.secondary.withOpacity(0.6),
-                Colors.transparent,
-              ],
-            ),
-            borderRadius: BorderRadius.circular(8),
+            color: isDark ? const Color(0xFFD7FF3F) : const Color(0xFF181818),
+            borderRadius: BorderRadius.circular(2),
           ),
         ),
         const SizedBox(height: 16),
         Text(
           subtitle,
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: Colors.white70,
-                height: 1.6,
-              ),
+          style: theme.textTheme.bodyLarge?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+            height: 1.6,
+          ),
         ),
       ],
     );
