@@ -4,6 +4,8 @@
 
 - *(landing_page)* Created a flutter project web for landing page
 - *(landing_page)* Adjusted logos icon
+- *(streaming)* Refine host and receiver streaming session and packaging
+- *(page)* Align landing page with Asodya design, add theme switch, i18n, and prod deploy
 
 ### 🐛 Bug Fixes
 
@@ -17,6 +19,7 @@
 - *(deploy)* Implemented install process for curl to query on main
 - *(deploy)* Implemented install process for curl to query on main
 - *(deploy)* Implemented open two screen
+- *(web)* Remove custom loading shell from index.html
 ## [0.0.1] - 2026-02-07
 
 ### 🚀 Features

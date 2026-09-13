@@ -1,17 +1,17 @@
-import 'dart:math';
+import "package:flutter/foundation.dart";
+import "package:flutter/material.dart";
+import "package:flutter/services.dart";
+import "package:url_launcher/url_launcher.dart";
 
-import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
-
-import '../../domain/entities/landing_data.dart';
-import '../viewmodels/landing_view_model.dart';
-import '../widgets/animated_background.dart';
-import '../widgets/glow_card.dart';
-import '../widgets/gradient_text.dart';
-import '../widgets/neon_button.dart';
-import '../widgets/section_header.dart';
+import "../../domain/entities/landing_data.dart";
+import "../../l10n/app_localizations.dart";
+import "../viewmodels/landing_view_model.dart";
+import "../widgets/animated_background.dart";
+import "../widgets/glow_card.dart";
+import "../widgets/gradient_text.dart";
+import "../widgets/neon_button.dart";
+import "../widgets/parallax_header.dart";
+import "../widgets/section_header.dart";
 
 class LandingPage extends StatefulWidget {
   const LandingPage({super.key, required this.viewModel});
@@ -25,6 +25,16 @@ class LandingPage extends StatefulWidget {
 class _LandingPageState extends State<LandingPage> {
   late final ScrollController _scrollController;
   final ValueNotifier<double> _scrollOffset = ValueNotifier<double>(0);
+
+  final GlobalKey _heroKey = GlobalKey();
+  final GlobalKey _aboutKey = GlobalKey();
+  final GlobalKey _architectureKey = GlobalKey();
+  final GlobalKey _featuresKey = GlobalKey();
+  final GlobalKey _howItWorksKey = GlobalKey();
+  final GlobalKey _gettingStartedKey = GlobalKey();
+  final GlobalKey _protocolKey = GlobalKey();
+  final GlobalKey _roadmapKey = GlobalKey();
+  final GlobalKey _communityKey = GlobalKey();
 
   @override
   void initState() {
@@ -40,62 +50,190 @@ class _LandingPageState extends State<LandingPage> {
     super.dispose();
   }
 
+  void _scrollToSection(String sectionKey) {
+    GlobalKey? targetKey;
+    switch (sectionKey) {
+      case "hero":
+        targetKey = _heroKey;
+        break;
+      case "about":
+        targetKey = _aboutKey;
+        break;
+      case "architecture":
+        targetKey = _architectureKey;
+        break;
+      case "features":
+        targetKey = _featuresKey;
+        break;
+      case "howItWorks":
+        targetKey = _howItWorksKey;
+        break;
+      case "gettingStarted":
+        targetKey = _gettingStartedKey;
+        break;
+      case "protocol":
+        targetKey = _protocolKey;
+        break;
+      case "roadmap":
+        targetKey = _roadmapKey;
+        break;
+      case "community":
+        targetKey = _communityKey;
+        break;
+    }
+
+    if (targetKey?.currentContext != null) {
+      Scrollable.ensureVisible(
+        targetKey!.currentContext!,
+        duration: const Duration(milliseconds: 600),
+        curve: Curves.easeInOutCubic,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final data = widget.viewModel.landingData;
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final colorScheme = theme.colorScheme;
+    final fallbackData = widget.viewModel.landingData;
 
     return Scaffold(
       body: Stack(
         children: [
+          // Background with architectural grid & subtle particles
           Positioned.fill(
             child: AnimatedBackground(scrollOffset: _scrollOffset),
           ),
+
+          // Scrollable content
           Positioned.fill(
             child: SingleChildScrollView(
               controller: _scrollController,
+              padding: const EdgeInsets.only(top: 64),
               child: Column(
                 children: [
-                  HeroSection(data: data.hero),
+                  HeroSection(
+                    key: _heroKey,
+                    l10n: l10n,
+                    fallback: fallbackData.hero,
+                    onGetStarted: () => _scrollToSection("gettingStarted"),
+                  ),
                   SectionWrapper(
+                    key: _aboutKey,
                     scrollOffset: _scrollOffset,
-                    child: AboutSection(data: data.about),
+                    child: AboutSection(l10n: l10n, fallback: fallbackData.about),
+                  ),
+                  SectionWrapper(
+                    key: _architectureKey,
+                    scrollOffset: _scrollOffset,
+                    child: ArchitectureSection(
+                      l10n: l10n,
+                      fallback: fallbackData.architecture,
+                    ),
+                  ),
+                  SectionWrapper(
+                    key: _featuresKey,
+                    scrollOffset: _scrollOffset,
+                    child: FeaturesSection(
+                      l10n: l10n,
+                      fallbackItems: fallbackData.features,
+                    ),
+                  ),
+                  SectionWrapper(
+                    key: _howItWorksKey,
+                    scrollOffset: _scrollOffset,
+                    child: HowItWorksSection(
+                      l10n: l10n,
+                      fallbackSteps: fallbackData.steps,
+                    ),
+                  ),
+                  SectionWrapper(
+                    key: _gettingStartedKey,
+                    scrollOffset: _scrollOffset,
+                    child: GettingStartedSection(
+                      l10n: l10n,
+                      fallbackSamples: fallbackData.gettingStarted,
+                    ),
+                  ),
+                  SectionWrapper(
+                    key: _protocolKey,
+                    scrollOffset: _scrollOffset,
+                    child: ProtocolSection(
+                      l10n: l10n,
+                      fallback: fallbackData.protocol,
+                    ),
+                  ),
+                  SectionWrapper(
+                    key: _roadmapKey,
+                    scrollOffset: _scrollOffset,
+                    child: RoadmapSection(
+                      l10n: l10n,
+                      fallback: fallbackData.roadmap,
+                    ),
+                  ),
+                  SectionWrapper(
+                    key: _communityKey,
+                    scrollOffset: _scrollOffset,
+                    child: CommunitySection(
+                      l10n: l10n,
+                      fallback: fallbackData.community,
+                    ),
                   ),
                   SectionWrapper(
                     scrollOffset: _scrollOffset,
-                    child: ArchitectureSection(data: data.architecture),
+                    child: FinalCtaSection(
+                      l10n: l10n,
+                      fallback: fallbackData.finalCta,
+                    ),
                   ),
-                  SectionWrapper(
-                    scrollOffset: _scrollOffset,
-                    child: FeaturesSection(items: data.features),
+                  // Footer
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 32),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        top: BorderSide(
+                          color: isDark ? const Color(0xFF262626) : const Color(0xFFE5E7EB),
+                        ),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          l10n?.footerCopyright ?? "© 2026 Asodya. All rights reserved.",
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              "ASODYA ECOSYSTEM",
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                letterSpacing: 1.5,
+                                color: colorScheme.onSurfaceVariant,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                  SectionWrapper(
-                    scrollOffset: _scrollOffset,
-                    child: HowItWorksSection(steps: data.steps),
-                  ),
-                  SectionWrapper(
-                    scrollOffset: _scrollOffset,
-                    child: GettingStartedSection(samples: data.gettingStarted),
-                  ),
-                  SectionWrapper(
-                    scrollOffset: _scrollOffset,
-                    child: ProtocolSection(data: data.protocol),
-                  ),
-                  SectionWrapper(
-                    scrollOffset: _scrollOffset,
-                    child: RoadmapSection(data: data.roadmap),
-                  ),
-                  SectionWrapper(
-                    scrollOffset: _scrollOffset,
-                    child: CommunitySection(data: data.community),
-                  ),
-                  SectionWrapper(
-                    scrollOffset: _scrollOffset,
-                    child: FinalCtaSection(data: data.finalCta),
-                  ),
-                  const SizedBox(height: 80),
                 ],
               ),
             ),
+          ),
+
+          // Sticky Navigation Header
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: ParallaxHeader(onNavigateToSection: _scrollToSection),
           ),
         ],
       ),
@@ -104,173 +242,157 @@ class _LandingPageState extends State<LandingPage> {
 }
 
 class HeroSection extends StatelessWidget {
-  const HeroSection({super.key, required this.data});
+  const HeroSection({
+    super.key,
+    required this.l10n,
+    required this.fallback,
+    required this.onGetStarted,
+  });
 
-  final HeroContent data;
+  final AppLocalizations? l10n;
+  final HeroContent fallback;
+  final VoidCallback onGetStarted;
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+
+    final headline = l10n?.heroHeadline ?? fallback.headline;
+    final subHeadline = l10n?.heroSubHeadline ?? fallback.subHeadline;
+    final primaryCta = l10n?.heroPrimaryCta ?? fallback.primaryCta;
+    final secondaryCta = l10n?.heroSecondaryCta ?? fallback.secondaryCta;
+    final microText = l10n?.heroMicroText ?? fallback.microText;
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 64),
+      constraints: const BoxConstraints(maxWidth: 1040),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.blur_on, color: Color(0xFFB86CFF)),
-                  const SizedBox(width: 12),
-                  Text(
-                    'Parallax',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
+          // Tag pill
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? const Color(0xFF191A16)
+                  : const Color(0xFFEAEAEA),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isDark ? const Color(0xFF262626) : const Color(0xFFD1D5DB),
               ),
-              Row(
-                children: [
-                  TextButton(
-                    onPressed: () => _openGithub(context),
-                    child: const Text('Docs'),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: isDark ? const Color(0xFFD7FF3F) : Colors.black,
                   ),
-                  const SizedBox(width: 12),
-                  TextButton(
-                    onPressed: () => _openGithub(context),
-                    child: const Text('GitHub'),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  "EXPERIMENTAL SPATIAL STREAMING",
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.2,
+                    color: colorScheme.onSurface,
                   ),
-                ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 28),
+
+          GradientText(
+            "Parallax",
+            style: theme.textTheme.displayLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+              letterSpacing: -1.5,
+              fontSize: 64,
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          Text(
+            headline,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.headlineMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: colorScheme.onSurface,
+              height: 1.25,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          Text(
+            subHeadline,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              height: 1.6,
+            ),
+          ),
+          const SizedBox(height: 32),
+
+          Wrap(
+            spacing: 16,
+            runSpacing: 12,
+            alignment: WrapAlignment.center,
+            children: [
+              NeonButton(
+                label: primaryCta,
+                icon: const Icon(Icons.arrow_forward, size: 16),
+                onPressed: onGetStarted,
+              ),
+              NeonButton(
+                label: secondaryCta,
+                isPrimary: false,
+                icon: const Icon(Icons.code, size: 16),
+                onPressed: () => _openGithub(context),
               ),
             ],
           ),
-          const SizedBox(height: 80),
-          Container(
-            constraints: const BoxConstraints(maxWidth: 920),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                GradientText(
-                  'Parallax',
-                  gradient: LinearGradient(
-                    colors: [
-                      colorScheme.primary,
-                      colorScheme.secondary,
-                      Colors.white,
-                    ],
-                  ),
-                  style: Theme.of(context).textTheme.displayLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -1.2,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  data.headline,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    height: 1.2,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  data.subHeadline,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: Colors.white70,
-                    height: 1.6,
-                  ),
-                ),
-                const SizedBox(height: 32),
-                Text(
-                  'Install options',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Wrap(
-                  spacing: 14,
-                  runSpacing: 14,
-                  alignment: WrapAlignment.center,
-                  children: const [
-                    _HeroInstallCard(
-                      title: 'One command (curl + bash)',
-                      command:
-                          'curl -fsSL https://parallax.asodya.com/assets/install.sh | bash',
-                    ),
-                    _HeroInstallCard(
-                      title: 'Cargo flow',
-                      command:
-                          'cargo install --path host\n./packaging/install-debian.sh',
-                    ),
-                    _HeroInstallCard(
-                      title: 'Repository flow',
-                      command:
-                          'git clone https://github.com/asodya/parallax.git\ncd parallax\n./packaging/install-debian.sh',
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  data.microText,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.white54,
-                    letterSpacing: 0.4,
-                  ),
-                ),
-                const SizedBox(height: 60),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 16,
-                  ),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: Colors.white10),
-                    color: Colors.white.withOpacity(0.04),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.waves, color: colorScheme.primary),
-                      const SizedBox(width: 12),
-                      Text(
-                        'Ultra-low latency signal path with adaptive UDP framing',
-                        style: Theme.of(
-                          context,
-                        ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+          const SizedBox(height: 16),
+
+          Text(
+            microText,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              letterSpacing: 0.3,
             ),
           ),
-          const SizedBox(height: 80),
-          SizedBox(
-            height: 180,
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: AnimatedGradientPanel(color: colorScheme.primary),
-                ),
-                Align(
-                  alignment: Alignment.center,
-                  child: Text(
-                    'Latency · Fidelity · Immersion',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: Colors.white70,
-                      letterSpacing: 2,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          const SizedBox(height: 48),
+
+          // Quick install cards
+          Wrap(
+            spacing: 16,
+            runSpacing: 16,
+            alignment: WrapAlignment.center,
+            children: [
+              _HeroInstallCard(
+                title: l10n?.sample1Title ?? "One command (curl + bash)",
+                command: "curl -fsSL https://parallax.asodya.com/assets/install.sh | bash",
+                copyTooltip: l10n?.copyCommand ?? "Copy command",
+                copiedToast: l10n?.commandCopied ?? "Copied to clipboard",
+              ),
+              _HeroInstallCard(
+                title: l10n?.sample3Title ?? "Cargo flow",
+                command: "cargo install --path host\n./packaging/install-debian.sh",
+                copyTooltip: l10n?.copyCommand ?? "Copy command",
+                copiedToast: l10n?.commandCopied ?? "Copied to clipboard",
+              ),
+              _HeroInstallCard(
+                title: l10n?.sample4Title ?? "Repository flow",
+                command: "git clone https://github.com/asodya/parallax.git\ncd parallax\n./packaging/install-debian.sh",
+                copyTooltip: l10n?.copyCommand ?? "Copy command",
+                copiedToast: l10n?.commandCopied ?? "Copied to clipboard",
+              ),
+            ],
           ),
         ],
       ),
@@ -279,16 +401,28 @@ class HeroSection extends StatelessWidget {
 }
 
 class _HeroInstallCard extends StatelessWidget {
-  const _HeroInstallCard({required this.title, required this.command});
+  const _HeroInstallCard({
+    required this.title,
+    required this.command,
+    required this.copyTooltip,
+    required this.copiedToast,
+  });
 
   final String title;
   final String command;
+  final String copyTooltip;
+  final String copiedToast;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final colorScheme = theme.colorScheme;
+
     return SizedBox(
-      width: 280,
+      width: 300,
       child: GlowCard(
+        padding: const EdgeInsets.all(18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -298,33 +432,41 @@ class _HeroInstallCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     title,
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    style: theme.textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w700,
+                      color: colorScheme.onSurface,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 IconButton(
-                  onPressed: () => _copyCommand(context, command),
-                  icon: const Icon(Icons.copy, size: 18),
-                  tooltip: 'Copy command',
+                  onPressed: () => _copyCommand(context, command, copiedToast),
+                  icon: const Icon(Icons.copy_outlined, size: 16),
+                  tooltip: copyTooltip,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.3),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white10),
+                color: isDark ? const Color(0xFF10110E) : const Color(0xFFF3F4F6),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: isDark ? const Color(0xFF262626) : const Color(0xFFE5E7EB),
+                ),
               ),
               child: Text(
                 command,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  fontFamily: 'monospace',
-                  color: Colors.white70,
-                  height: 1.45,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontFamily: "monospace",
+                  color: colorScheme.onSurface,
+                  fontSize: 11,
+                  height: 1.4,
                 ),
               ),
             ),
@@ -336,81 +478,65 @@ class _HeroInstallCard extends StatelessWidget {
 }
 
 class AboutSection extends StatelessWidget {
-  const AboutSection({super.key, required this.data});
+  const AboutSection({super.key, required this.l10n, required this.fallback});
 
-  final AboutContent data;
+  final AppLocalizations? l10n;
+  final AboutContent fallback;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+
+    final title = l10n?.aboutTitle ?? fallback.title;
+    final desc = l10n?.aboutDescription ?? fallback.description;
+
+    final details = [
+      l10n?.aboutDetail1 ?? fallback.details[0],
+      l10n?.aboutDetail2 ?? fallback.details[1],
+      l10n?.aboutDetail3 ?? fallback.details[2],
+      l10n?.aboutDetail4 ?? fallback.details[3],
+      l10n?.aboutDetail5 ?? fallback.details[4],
+    ];
+
     return _SectionContainer(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SectionHeader(title: data.title, subtitle: data.description),
+          SectionHeader(title: title, subtitle: desc),
           const SizedBox(height: 28),
           Wrap(
             spacing: 16,
             runSpacing: 16,
-            children: data.details
-                .map(
-                  (detail) => GlowCard(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.blur_on, color: Color(0xFFB86CFF)),
-                        const SizedBox(width: 12),
-                        Flexible(
-                          child: Text(
-                            detail,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(color: Colors.white70, height: 1.4),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-                .toList(),
-          ),
-          const SizedBox(height: 32),
-          GlowCard(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Experimental pipeline diagram',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  height: 160,
-                  child: Stack(
+            children: details.map((detail) {
+              return SizedBox(
+                width: 320,
+                child: GlowCard(
+                  padding: const EdgeInsets.all(18),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Positioned.fill(
-                        child: AnimatedGradientPanel(
-                          color: Theme.of(context).colorScheme.secondary,
-                        ),
+                      Icon(
+                        Icons.check_circle_outline,
+                        size: 20,
+                        color: isDark ? const Color(0xFFD7FF3F) : const Color(0xFF181818),
                       ),
-                      Align(
-                        alignment: Alignment.center,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: const [
-                            _DiagramNode(label: 'X11 Capture'),
-                            _DiagramNode(label: 'H.264 Encode'),
-                            _DiagramNode(label: 'UDP Stream'),
-                            _DiagramNode(label: 'VR Client'),
-                          ],
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          detail,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onSurface,
+                            height: 1.45,
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
-              ],
-            ),
+              );
+            }).toList(),
           ),
         ],
       ),
@@ -419,55 +545,130 @@ class AboutSection extends StatelessWidget {
 }
 
 class ArchitectureSection extends StatelessWidget {
-  const ArchitectureSection({super.key, required this.data});
+  const ArchitectureSection({super.key, required this.l10n, required this.fallback});
 
-  final ArchitectureContent data;
+  final AppLocalizations? l10n;
+  final ArchitectureContent fallback;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+
+    final title = l10n?.architectureTitle ?? fallback.title;
+    final desc = l10n?.architectureSubtitle ?? fallback.description;
+
+    final hostNodes = [
+      ArchitectureNode(
+        title: l10n?.archHostTitle ?? fallback.hostNodes[0].title,
+        subtitle: l10n?.archHostSubtitle ?? fallback.hostNodes[0].subtitle,
+        tooltip: l10n?.archHostTooltip ?? fallback.hostNodes[0].tooltip,
+      ),
+      ArchitectureNode(
+        title: l10n?.archX11Title ?? fallback.hostNodes[1].title,
+        subtitle: l10n?.archX11Subtitle ?? fallback.hostNodes[1].subtitle,
+        tooltip: l10n?.archX11Tooltip ?? fallback.hostNodes[1].tooltip,
+      ),
+      ArchitectureNode(
+        title: l10n?.archEncodeTitle ?? fallback.hostNodes[2].title,
+        subtitle: l10n?.archEncodeSubtitle ?? fallback.hostNodes[2].subtitle,
+        tooltip: l10n?.archEncodeTooltip ?? fallback.hostNodes[2].tooltip,
+      ),
+      ArchitectureNode(
+        title: l10n?.archUdpStreamTitle ?? fallback.hostNodes[3].title,
+        subtitle: l10n?.archUdpStreamSubtitle ?? fallback.hostNodes[3].subtitle,
+        tooltip: l10n?.archUdpStreamTooltip ?? fallback.hostNodes[3].tooltip,
+      ),
+    ];
+
+    final clientNodes = [
+      ArchitectureNode(
+        title: l10n?.archAndroidTitle ?? fallback.clientNodes[0].title,
+        subtitle: l10n?.archAndroidSubtitle ?? fallback.clientNodes[0].subtitle,
+        tooltip: l10n?.archAndroidTooltip ?? fallback.clientNodes[0].tooltip,
+      ),
+      ArchitectureNode(
+        title: l10n?.archQrTitle ?? fallback.clientNodes[1].title,
+        subtitle: l10n?.archQrSubtitle ?? fallback.clientNodes[1].subtitle,
+        tooltip: l10n?.archQrTooltip ?? fallback.clientNodes[1].tooltip,
+      ),
+      ArchitectureNode(
+        title: l10n?.archTcpTitle ?? fallback.clientNodes[2].title,
+        subtitle: l10n?.archTcpSubtitle ?? fallback.clientNodes[2].subtitle,
+        tooltip: l10n?.archTcpTooltip ?? fallback.clientNodes[2].tooltip,
+      ),
+      ArchitectureNode(
+        title: l10n?.archDecodeTitle ?? fallback.clientNodes[3].title,
+        subtitle: l10n?.archDecodeSubtitle ?? fallback.clientNodes[3].subtitle,
+        tooltip: l10n?.archDecodeTooltip ?? fallback.clientNodes[3].tooltip,
+      ),
+    ];
+
     return _SectionContainer(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SectionHeader(title: data.title, subtitle: data.description),
+          SectionHeader(title: title, subtitle: desc),
           const SizedBox(height: 28),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: _ArchitectureColumn(
-                  title: 'Linux Host (Rust)',
-                  nodes: data.hostNodes,
-                ),
-              ),
-              const SizedBox(width: 24),
-              Expanded(
-                child: _ArchitectureColumn(
-                  title: 'Android Client',
-                  nodes: data.clientNodes,
-                ),
-              ),
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 720;
+              return Flex(
+                direction: isNarrow ? Axis.vertical : Axis.horizontal,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: isNarrow ? 0 : 1,
+                    child: _ArchitectureColumn(
+                      title: l10n?.archHostTitle ?? "Linux Host (Rust)",
+                      nodes: hostNodes,
+                      icon: Icons.computer_outlined,
+                    ),
+                  ),
+                  SizedBox(width: isNarrow ? 0 : 24, height: isNarrow ? 24 : 0),
+                  Expanded(
+                    flex: isNarrow ? 0 : 1,
+                    child: _ArchitectureColumn(
+                      title: l10n?.archAndroidTitle ?? "Android Client",
+                      nodes: clientNodes,
+                      icon: Icons.phone_android_outlined,
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 24),
           Wrap(
             spacing: 12,
-            children: data.flows
-                .map(
-                  (flow) => Chip(
-                    label: Text(flow.label),
-                    avatar: Icon(
-                      flow.direction == FlowDirection.biDirectional
-                          ? Icons.sync_alt
-                          : Icons.arrow_forward,
-                      size: 18,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    backgroundColor: Colors.white.withOpacity(0.08),
-                    labelStyle: const TextStyle(color: Colors.white70),
-                  ),
-                )
-                .toList(),
+            runSpacing: 8,
+            children: [
+              Chip(
+                label: Text(l10n?.archFlowTcp ?? "TCP control (bi-directional)"),
+                avatar: Icon(
+                  Icons.sync_alt,
+                  size: 16,
+                  color: colorScheme.onSurface,
+                ),
+                backgroundColor: isDark ? const Color(0xFF191A16) : const Color(0xFFF3F4F6),
+                side: BorderSide(
+                  color: isDark ? const Color(0xFF262626) : const Color(0xFFE5E7EB),
+                ),
+              ),
+              Chip(
+                label: Text(l10n?.archFlowUdp ?? "UDP video stream (host → client)"),
+                avatar: Icon(
+                  Icons.arrow_forward,
+                  size: 16,
+                  color: colorScheme.onSurface,
+                ),
+                backgroundColor: isDark ? const Color(0xFF191A16) : const Color(0xFFF3F4F6),
+                side: BorderSide(
+                  color: isDark ? const Color(0xFF262626) : const Color(0xFFE5E7EB),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -476,67 +677,111 @@ class ArchitectureSection extends StatelessWidget {
 }
 
 class FeaturesSection extends StatelessWidget {
-  const FeaturesSection({super.key, required this.items});
+  const FeaturesSection({
+    super.key,
+    required this.l10n,
+    required this.fallbackItems,
+  });
 
-  final List<FeatureItem> items;
+  final AppLocalizations? l10n;
+  final List<FeatureItem> fallbackItems;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+
+    final title = l10n?.featuresTitle ?? "Core features";
+    final desc = l10n?.featuresSubtitle ?? "High-performance streaming primitives designed for VR latency budgets.";
+
+    final items = [
+      (
+        icon: Icons.bolt_outlined,
+        title: l10n?.featUdpTitle ?? fallbackItems[0].title,
+        desc: l10n?.featUdpDesc ?? fallbackItems[0].description,
+      ),
+      (
+        icon: Icons.lock_outlined,
+        title: l10n?.featPairingTitle ?? fallbackItems[1].title,
+        desc: l10n?.featPairingDesc ?? fallbackItems[1].description,
+      ),
+      (
+        icon: Icons.extension_outlined,
+        title: l10n?.featProtocolTitle ?? fallbackItems[2].title,
+        desc: l10n?.featProtocolDesc ?? fallbackItems[2].description,
+      ),
+      (
+        icon: Icons.desktop_windows_outlined,
+        title: l10n?.featHostUiTitle ?? fallbackItems[3].title,
+        desc: l10n?.featHostUiDesc ?? fallbackItems[3].description,
+      ),
+      (
+        icon: Icons.phone_android_outlined,
+        title: l10n?.featAndroidClientTitle ?? fallbackItems[4].title,
+        desc: l10n?.featAndroidClientDesc ?? fallbackItems[4].description,
+      ),
+    ];
+
     return _SectionContainer(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SectionHeader(
-            title: 'Core features',
-            subtitle:
-                'High-performance streaming primitives designed for VR latency budgets.',
-          ),
+          SectionHeader(title: title, subtitle: desc),
           const SizedBox(height: 28),
           LayoutBuilder(
             builder: (context, constraints) {
               final width = constraints.maxWidth;
-              final crossAxisCount = width > 1000
-                  ? 3
-                  : width > 700
-                  ? 2
-                  : 1;
+              final crossAxisCount = width > 1000 ? 3 : (width > 680 ? 2 : 1);
+              final itemWidth = (width - (crossAxisCount - 1) * 20) / crossAxisCount;
+
               return Wrap(
                 spacing: 20,
                 runSpacing: 20,
-                children: items
-                    .map(
-                      (item) => SizedBox(
-                        width: width / crossAxisCount - 20,
-                        child: GlowCard(
-                          onTap: () => _openGithub(context),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                item.icon,
-                                style: const TextStyle(fontSize: 28),
+                children: items.map((item) {
+                  return SizedBox(
+                    width: itemWidth,
+                    child: GlowCard(
+                      onTap: () => _openGithub(context),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF10110E) : const Color(0xFFF3F4F6),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: isDark ? const Color(0xFF262626) : const Color(0xFFE5E7EB),
                               ),
-                              const SizedBox(height: 16),
-                              Text(
-                                item.title,
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w600),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                item.description,
-                                style: Theme.of(context).textTheme.bodyMedium
-                                    ?.copyWith(
-                                      color: Colors.white70,
-                                      height: 1.5,
-                                    ),
-                              ),
-                            ],
+                            ),
+                            child: Icon(
+                              item.icon,
+                              size: 24,
+                              color: isDark ? const Color(0xFFD7FF3F) : const Color(0xFF181818),
+                            ),
                           ),
-                        ),
+                          const SizedBox(height: 16),
+                          Text(
+                            item.title,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: colorScheme.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            item.desc,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                              height: 1.5,
+                            ),
+                          ),
+                        ],
                       ),
-                    )
-                    .toList(),
+                    ),
+                  );
+                }).toList(),
               );
             },
           ),
@@ -547,9 +792,14 @@ class FeaturesSection extends StatelessWidget {
 }
 
 class HowItWorksSection extends StatefulWidget {
-  const HowItWorksSection({super.key, required this.steps});
+  const HowItWorksSection({
+    super.key,
+    required this.l10n,
+    required this.fallbackSteps,
+  });
 
-  final List<StepItem> steps;
+  final AppLocalizations? l10n;
+  final List<StepItem> fallbackSteps;
 
   @override
   State<HowItWorksSection> createState() => _HowItWorksSectionState();
@@ -560,78 +810,109 @@ class _HowItWorksSectionState extends State<HowItWorksSection> {
 
   @override
   Widget build(BuildContext context) {
-    final selected = widget.steps[_selectedIndex];
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final l10n = widget.l10n;
+
+    final steps = [
+      (
+        title: l10n?.step1Title ?? widget.fallbackSteps[0].title,
+        desc: l10n?.step1Desc ?? widget.fallbackSteps[0].description,
+      ),
+      (
+        title: l10n?.step2Title ?? widget.fallbackSteps[1].title,
+        desc: l10n?.step2Desc ?? widget.fallbackSteps[1].description,
+      ),
+      (
+        title: l10n?.step3Title ?? widget.fallbackSteps[2].title,
+        desc: l10n?.step3Desc ?? widget.fallbackSteps[2].description,
+      ),
+      (
+        title: l10n?.step4Title ?? widget.fallbackSteps[3].title,
+        desc: l10n?.step4Desc ?? widget.fallbackSteps[3].description,
+      ),
+      (
+        title: l10n?.step5Title ?? widget.fallbackSteps[4].title,
+        desc: l10n?.step5Desc ?? widget.fallbackSteps[4].description,
+      ),
+    ];
+
+    final selected = steps[_selectedIndex];
+
     return _SectionContainer(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SectionHeader(
-            title: 'How it works',
-            subtitle:
-                'Follow the end-to-end flow from Linux capture to immersive playback.',
+            title: l10n?.howItWorksTitle ?? "How it works",
+            subtitle: l10n?.howItWorksSubtitle ?? "From desktop display to VR headset in five synchronized pipeline steps.",
           ),
           const SizedBox(height: 24),
           Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: widget.steps.asMap().entries.map((entry) {
-              final index = entry.key;
-              final isSelected = index == _selectedIndex;
+            spacing: 10,
+            runSpacing: 10,
+            children: steps.asMap().entries.map((entry) {
+              final idx = entry.key;
+              final isSel = idx == _selectedIndex;
               return ChoiceChip(
-                label: Text('Step ${index + 1}'),
-                selected: isSelected,
-                onSelected: (_) => setState(() => _selectedIndex = index),
-                selectedColor: Theme.of(
-                  context,
-                ).colorScheme.primary.withOpacity(0.4),
-                backgroundColor: Colors.white10,
+                label: Text("0${idx + 1}"),
+                selected: isSel,
+                onSelected: (_) => setState(() => _selectedIndex = idx),
+                selectedColor: isDark ? Colors.white : Colors.black,
+                backgroundColor: isDark ? const Color(0xFF191A16) : const Color(0xFFF3F4F6),
                 labelStyle: TextStyle(
-                  color: isSelected ? Colors.white : Colors.white70,
+                  color: isSel
+                      ? (isDark ? Colors.black : Colors.white)
+                      : colorScheme.onSurface,
+                  fontWeight: FontWeight.w700,
+                ),
+                side: BorderSide(
+                  color: isDark ? const Color(0xFF262626) : const Color(0xFFE5E7EB),
                 ),
               );
             }).toList(),
           ),
           const SizedBox(height: 20),
           GlowCard(
+            padding: const EdgeInsets.all(24),
             child: Row(
               children: [
                 Container(
-                  width: 52,
-                  height: 52,
+                  width: 48,
+                  height: 48,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      colors: [
-                        Theme.of(context).colorScheme.primary,
-                        Theme.of(context).colorScheme.secondary,
-                      ],
-                    ),
+                    color: isDark ? Colors.white : Colors.black,
                   ),
                   child: Center(
                     child: Text(
-                      '${_selectedIndex + 1}',
-                      style: const TextStyle(
+                      "${_selectedIndex + 1}",
+                      style: TextStyle(
                         fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w900,
+                        color: isDark ? Colors.black : Colors.white,
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 20),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         selected.title,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w600),
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: colorScheme.onSurface,
+                        ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
                       Text(
-                        selected.description,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.white70,
+                        selected.desc,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
                           height: 1.5,
                         ),
                       ),
@@ -648,184 +929,231 @@ class _HowItWorksSectionState extends State<HowItWorksSection> {
 }
 
 class GettingStartedSection extends StatelessWidget {
-  const GettingStartedSection({super.key, required this.samples});
+  const GettingStartedSection({
+    super.key,
+    required this.l10n,
+    required this.fallbackSamples,
+  });
 
-  final List<CodeSample> samples;
+  final AppLocalizations? l10n;
+  final List<CodeSample> fallbackSamples;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+
+    final samples = [
+      (
+        title: l10n?.sample1Title ?? fallbackSamples[0].title,
+        command: fallbackSamples[0].command,
+        caption: l10n?.sample1Caption ?? fallbackSamples[0].caption,
+      ),
+      (
+        title: l10n?.sample2Title ?? fallbackSamples[1].title,
+        command: fallbackSamples[1].command,
+        caption: l10n?.sample2Caption ?? fallbackSamples[1].caption,
+      ),
+      (
+        title: l10n?.sample3Title ?? fallbackSamples[2].title,
+        command: fallbackSamples[2].command,
+        caption: l10n?.sample3Caption ?? fallbackSamples[2].caption,
+      ),
+      (
+        title: l10n?.sample4Title ?? fallbackSamples[3].title,
+        command: fallbackSamples[3].command,
+        caption: l10n?.sample4Caption ?? fallbackSamples[3].caption,
+      ),
+    ];
+
     return _SectionContainer(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final cardWidth = min(420.0, constraints.maxWidth);
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SectionHeader(
-                title: 'Getting started',
-                subtitle:
-                    'Developer-friendly setup commands with instant copy actions.',
-              ),
-              const SizedBox(height: 24),
-              Wrap(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SectionHeader(
+            title: l10n?.gettingStartedTitle ?? "Getting started",
+            subtitle: l10n?.gettingStartedSubtitle ?? "Choose an installation method to deploy Parallax on your Linux host.",
+          ),
+          const SizedBox(height: 24),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final cardWidth = constraints.maxWidth > 800
+                  ? (constraints.maxWidth - 20) / 2
+                  : constraints.maxWidth;
+
+              return Wrap(
                 spacing: 20,
                 runSpacing: 20,
-                children: samples
-                    .map(
-                      (sample) => SizedBox(
-                        width: cardWidth,
-                        child: GlowCard(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                children: samples.map((sample) {
+                  return SizedBox(
+                    width: cardWidth,
+                    child: GlowCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    sample.title,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleMedium
-                                        ?.copyWith(fontWeight: FontWeight.w600),
-                                  ),
-                                  IconButton(
-                                    onPressed: () =>
-                                        _copyCommand(context, sample.command),
-                                    icon: const Icon(Icons.copy, size: 18),
-                                    tooltip: 'Copy command',
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              Container(
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.3),
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(color: Colors.white10),
-                                ),
+                              Expanded(
                                 child: Text(
-                                  sample.command,
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        fontFamily: 'monospace',
-                                        color: Colors.white70,
-                                        height: 1.5,
-                                      ),
+                                  sample.title,
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    color: colorScheme.onSurface,
+                                  ),
                                 ),
                               ),
-                              const SizedBox(height: 12),
-                              Text(
-                                sample.caption,
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(color: Colors.white60),
+                              IconButton(
+                                onPressed: () => _copyCommand(
+                                  context,
+                                  sample.command,
+                                  l10n?.commandCopied ?? "Copied to clipboard",
+                                ),
+                                icon: const Icon(Icons.copy_outlined, size: 16),
+                                tooltip: l10n?.copyCommand ?? "Copy command",
                               ),
                             ],
                           ),
-                        ),
+                          const SizedBox(height: 12),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF10110E) : const Color(0xFFF3F4F6),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isDark ? const Color(0xFF262626) : const Color(0xFFE5E7EB),
+                              ),
+                            ),
+                            child: Text(
+                              sample.command,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                fontFamily: "monospace",
+                                color: colorScheme.onSurface,
+                                fontSize: 12,
+                                height: 1.45,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            sample.caption,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
                       ),
-                    )
-                    .toList(),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Scan the QR code from the host UI and connect from your Android device.',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
-              ),
-            ],
-          );
-        },
+                    ),
+                  );
+                }).toList(),
+              );
+            },
+          ),
+        ],
       ),
     );
   }
 }
 
 class ProtocolSection extends StatelessWidget {
-  const ProtocolSection({super.key, required this.data});
+  const ProtocolSection({super.key, required this.l10n, required this.fallback});
 
-  final ProtocolContent data;
+  final AppLocalizations? l10n;
+  final ProtocolContent fallback;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+
+    final highlights = [
+      l10n?.protocolHighlight1 ?? fallback.highlights[0],
+      l10n?.protocolHighlight2 ?? fallback.highlights[1],
+      l10n?.protocolHighlight3 ?? fallback.highlights[2],
+      l10n?.protocolHighlight4 ?? fallback.highlights[3],
+      l10n?.protocolHighlight5 ?? fallback.highlights[4],
+    ];
+
+    final notes = [
+      l10n?.protocolNote1 ?? fallback.payloadNotes[0],
+      l10n?.protocolNote2 ?? fallback.payloadNotes[1],
+    ];
+
     return _SectionContainer(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SectionHeader(title: data.title, subtitle: data.summary),
+          SectionHeader(
+            title: l10n?.protocolTitle ?? fallback.title,
+            subtitle: l10n?.protocolSubtitle ?? fallback.summary,
+          ),
           const SizedBox(height: 24),
           GlowCard(
+            padding: const EdgeInsets.all(24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Packet format highlights',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+                  "UDP Packet Highlights",
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: colorScheme.onSurface,
                   ),
                 ),
-                const SizedBox(height: 12),
-                ...data.highlights.map(
-                  (item) => Padding(
+                const SizedBox(height: 14),
+                ...highlights.map((item) {
+                  return Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(
-                          Icons.fiber_manual_record,
-                          size: 10,
-                          color: Colors.white54,
+                        Container(
+                          margin: const EdgeInsets.only(top: 6),
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: isDark ? const Color(0xFFD7FF3F) : Colors.black,
+                          ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
                             item,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(color: Colors.white70, height: 1.4),
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: colorScheme.onSurface,
+                              height: 1.45,
+                            ),
                           ),
                         ),
                       ],
                     ),
-                  ),
-                ),
+                  );
+                }),
                 const SizedBox(height: 16),
                 Text(
-                  'Payload notes',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                  l10n?.protocolPayloadNotesTitle ?? "Payload notes",
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: colorScheme.onSurface,
+                  ),
                 ),
                 const SizedBox(height: 8),
-                ...data.payloadNotes.map(
-                  (item) => Padding(
+                ...notes.map((item) {
+                  return Padding(
                     padding: const EdgeInsets.only(bottom: 6),
                     child: Text(
                       item,
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodySmall?.copyWith(color: Colors.white60),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                ExpansionTile(
-                  title: const Text('Read full protocol'),
-                  collapsedIconColor: Colors.white54,
-                  iconColor: Theme.of(context).colorScheme.primary,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Text(
-                        'See proto/README.md for the full header layout, flag definitions, and MTU guidance.',
-                        style: Theme.of(
-                          context,
-                        ).textTheme.bodySmall?.copyWith(color: Colors.white60),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        height: 1.4,
                       ),
                     ),
-                  ],
-                ),
+                  );
+                }),
               ],
             ),
           ),
@@ -836,50 +1164,88 @@ class ProtocolSection extends StatelessWidget {
 }
 
 class RoadmapSection extends StatelessWidget {
-  const RoadmapSection({super.key, required this.data});
+  const RoadmapSection({super.key, required this.l10n, required this.fallback});
 
-  final RoadmapContent data;
+  final AppLocalizations? l10n;
+  final RoadmapContent fallback;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+
+    final items = [
+      (
+        title: l10n?.roadmapItem1Title ?? fallback.timeline[0].title,
+        desc: l10n?.roadmapItem1Desc ?? fallback.timeline[0].description,
+      ),
+      (
+        title: l10n?.roadmapItem2Title ?? fallback.timeline[1].title,
+        desc: l10n?.roadmapItem2Desc ?? fallback.timeline[1].description,
+      ),
+      (
+        title: l10n?.roadmapItem3Title ?? fallback.timeline[2].title,
+        desc: l10n?.roadmapItem3Desc ?? fallback.timeline[2].description,
+      ),
+      (
+        title: l10n?.roadmapItem4Title ?? fallback.timeline[3].title,
+        desc: l10n?.roadmapItem4Desc ?? fallback.timeline[3].description,
+      ),
+    ];
+
     return _SectionContainer(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SectionHeader(
-            title: data.title,
-            subtitle: data.statusLines.join(' '),
+            title: l10n?.roadmapTitle ?? fallback.title,
+            subtitle: l10n?.roadmapSubtitle ?? fallback.statusLines.join(" "),
           ),
           const SizedBox(height: 24),
           Wrap(
             spacing: 20,
             runSpacing: 20,
-            children: data.timeline
-                .map(
-                  (item) => SizedBox(
-                    width: 320,
-                    child: GlowCard(
-                      onTap: () => _openGithub(context),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+            children: items.map((item) {
+              return SizedBox(
+                width: 300,
+                child: GlowCard(
+                  onTap: () => _openGithub(context),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
                         children: [
-                          Text(
-                            item.title,
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(fontWeight: FontWeight.w600),
+                          Icon(
+                            Icons.arrow_circle_right_outlined,
+                            size: 18,
+                            color: isDark ? const Color(0xFFD7FF3F) : const Color(0xFF181818),
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            item.description,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(color: Colors.white70, height: 1.4),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              item.title,
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: colorScheme.onSurface,
+                              ),
+                            ),
                           ),
                         ],
                       ),
-                    ),
+                      const SizedBox(height: 8),
+                      Text(
+                        item.desc,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                          height: 1.45,
+                        ),
+                      ),
+                    ],
                   ),
-                )
-                .toList(),
+                ),
+              );
+            }).toList(),
           ),
         ],
       ),
@@ -888,30 +1254,50 @@ class RoadmapSection extends StatelessWidget {
 }
 
 class CommunitySection extends StatelessWidget {
-  const CommunitySection({super.key, required this.data});
+  const CommunitySection({super.key, required this.l10n, required this.fallback});
 
-  final CommunityContent data;
+  final AppLocalizations? l10n;
+  final CommunityContent fallback;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+
+    final items = [
+      l10n?.communityItem1 ?? fallback.items[0],
+      l10n?.communityItem2 ?? fallback.items[1],
+      l10n?.communityItem3 ?? fallback.items[2],
+    ];
+
     return _SectionContainer(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SectionHeader(title: data.title, subtitle: data.description),
+          SectionHeader(
+            title: l10n?.communityTitle ?? fallback.title,
+            subtitle: l10n?.communityDescription ?? fallback.description,
+          ),
           const SizedBox(height: 20),
           Wrap(
             spacing: 12,
-            children: data.items
-                .map(
-                  (item) => ActionChip(
-                    label: Text(item),
-                    onPressed: () => _openGithub(context),
-                    backgroundColor: Colors.white10,
-                    labelStyle: const TextStyle(color: Colors.white70),
-                  ),
-                )
-                .toList(),
+            runSpacing: 10,
+            children: items.map((item) {
+              return ActionChip(
+                label: Text(item),
+                onPressed: () => _openGithub(context),
+                avatar: const Icon(Icons.open_in_new, size: 14),
+                backgroundColor: isDark ? const Color(0xFF191A16) : const Color(0xFFF3F4F6),
+                side: BorderSide(
+                  color: isDark ? const Color(0xFF262626) : const Color(0xFFE5E7EB),
+                ),
+                labelStyle: TextStyle(
+                  color: colorScheme.onSurface,
+                  fontWeight: FontWeight.w500,
+                ),
+              );
+            }).toList(),
           ),
         ],
       ),
@@ -920,44 +1306,58 @@ class CommunitySection extends StatelessWidget {
 }
 
 class FinalCtaSection extends StatelessWidget {
-  const FinalCtaSection({super.key, required this.data});
+  const FinalCtaSection({super.key, required this.l10n, required this.fallback});
 
-  final FinalCtaContent data;
+  final AppLocalizations? l10n;
+  final FinalCtaContent fallback;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    final headline = l10n?.finalCtaHeadline ?? fallback.headline;
+    final subHeadline = l10n?.finalCtaSubHeadline ?? fallback.subHeadline;
+    final primaryCta = l10n?.heroPrimaryCta ?? fallback.primaryCta;
+    final secondaryCta = l10n?.heroSecondaryCta ?? fallback.secondaryCta;
+
     return _SectionContainer(
       child: GlowCard(
-        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 36),
+        padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 48),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Text(
-              data.headline,
+              headline,
               textAlign: TextAlign.center,
-              style: Theme.of(
-                context,
-              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+              style: theme.textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: colorScheme.onSurface,
+              ),
             ),
             const SizedBox(height: 12),
             Text(
-              data.subHeadline,
+              subHeadline,
               textAlign: TextAlign.center,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyLarge?.copyWith(color: Colors.white70),
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 28),
             Wrap(
               spacing: 16,
+              runSpacing: 12,
+              alignment: WrapAlignment.center,
               children: [
                 NeonButton(
-                  label: data.primaryCta,
+                  label: primaryCta,
+                  icon: const Icon(Icons.arrow_forward, size: 16),
                   onPressed: () => _openGithub(context),
                 ),
                 NeonButton(
-                  label: data.secondaryCta,
+                  label: secondaryCta,
                   isPrimary: false,
+                  icon: const Icon(Icons.code, size: 16),
                   onPressed: () => _openGithub(context),
                 ),
               ],
@@ -969,114 +1369,46 @@ class FinalCtaSection extends StatelessWidget {
   }
 }
 
-class AnimatedGradientPanel extends StatefulWidget {
-  const AnimatedGradientPanel({super.key, required this.color});
-
-  final Color color;
-
-  @override
-  State<AnimatedGradientPanel> createState() => _AnimatedGradientPanelState();
-}
-
-class _AnimatedGradientPanelState extends State<AnimatedGradientPanel>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 6),
-    )..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(32),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                widget.color.withOpacity(0.7 + 0.3 * _controller.value),
-                const Color(0xFF0F0A1A),
-                widget.color.withOpacity(0.2),
-              ],
-            ),
-          ),
-          child: child,
-        );
-      },
-    );
-  }
-}
-
-class _DiagramNode extends StatelessWidget {
-  const _DiagramNode({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Theme.of(context).colorScheme.primary.withOpacity(0.8),
-            boxShadow: [
-              BoxShadow(
-                color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
-                blurRadius: 16,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: Theme.of(
-            context,
-          ).textTheme.bodySmall?.copyWith(color: Colors.white70),
-        ),
-      ],
-    );
-  }
-}
-
 class _ArchitectureColumn extends StatelessWidget {
-  const _ArchitectureColumn({required this.title, required this.nodes});
+  const _ArchitectureColumn({
+    required this.title,
+    required this.nodes,
+    required this.icon,
+  });
 
   final String title;
   final List<ArchitectureNode> nodes;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+
     return GlowCard(
+      padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+          Row(
+            children: [
+              Icon(
+                icon,
+                size: 20,
+                color: isDark ? const Color(0xFFD7FF3F) : const Color(0xFF181818),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                title,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: colorScheme.onSurface,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           ...nodes.map(
             (node) => Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1084,10 +1416,13 @@ class _ArchitectureColumn extends StatelessWidget {
                 message: node.tooltip,
                 child: Row(
                   children: [
-                    const Icon(
-                      Icons.hexagon,
-                      size: 18,
-                      color: Color(0xFFB86CFF),
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isDark ? const Color(0xFFD7FF3F) : const Color(0xFF181818),
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -1096,13 +1431,16 @@ class _ArchitectureColumn extends StatelessWidget {
                         children: [
                           Text(
                             node.title,
-                            style: Theme.of(context).textTheme.bodyLarge
-                                ?.copyWith(fontWeight: FontWeight.w600),
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: colorScheme.onSurface,
+                            ),
                           ),
                           Text(
                             node.subtitle,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: Colors.white60),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
                           ),
                         ],
                       ),
@@ -1165,7 +1503,7 @@ class _SectionWrapperState extends State<SectionWrapper> {
     if (box == null) return;
     final offset = box.localToGlobal(Offset.zero).dy;
     final screenHeight = MediaQuery.of(context).size.height;
-    if (offset < screenHeight * 0.9) {
+    if (offset < screenHeight * 0.95) {
       setState(() => _visible = true);
     }
   }
@@ -1173,13 +1511,9 @@ class _SectionWrapperState extends State<SectionWrapper> {
   @override
   Widget build(BuildContext context) {
     return AnimatedOpacity(
-      duration: const Duration(milliseconds: 700),
+      duration: const Duration(milliseconds: 500),
       opacity: _visible ? 1 : 0,
-      child: AnimatedSlide(
-        duration: const Duration(milliseconds: 700),
-        offset: _visible ? Offset.zero : const Offset(0, 0.06),
-        child: widget.child,
-      ),
+      child: widget.child,
     );
   }
 }
@@ -1191,38 +1525,45 @@ class _SectionContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 56),
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 1040),
+      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
       child: child,
     );
   }
 }
 
-void _copyCommand(BuildContext context, String value) {
+void _copyCommand(BuildContext context, String value, String copiedToast) {
   Clipboard.setData(ClipboardData(text: value));
-  _showToast(context, 'Command copied to clipboard.');
+  _showToast(context, copiedToast);
 }
 
-const _githubUrl = 'https://github.com/asodya/parallax';
+const _githubUrl = "https://github.com/asodya/parallax";
 
 Future<void> _openGithub(BuildContext context) async {
   final uri = Uri.parse(_githubUrl);
   final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-  if (!context.mounted) {
-    return;
-  }
+  if (!context.mounted) return;
   if (!launched) {
-    _showToast(context, 'Unable to open GitHub link.');
+    _showToast(context, "Unable to open GitHub link.");
   }
 }
 
 void _showToast(BuildContext context, String message) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
-      content: Text(message),
-      backgroundColor: const Color(0xFF1A1425),
+      content: Text(
+        message,
+        style: TextStyle(
+          color: isDark ? Colors.black : Colors.white,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      backgroundColor: isDark ? Colors.white : const Color(0xFF181818),
       behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      duration: const Duration(seconds: 2),
     ),
   );
 }

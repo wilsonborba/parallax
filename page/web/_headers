@@ -1,0 +1,22 @@
+/*
+  Cache-Control: public, max-age=0, must-revalidate
+
+/
+  Cache-Control: no-cache, no-store, must-revalidate
+  Clear-Site-Data: "cache"
+
+/index.html
+  Cache-Control: no-cache, no-store, must-revalidate
+  Clear-Site-Data: "cache"
+
+/flutter_bootstrap.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/flutter_service_worker.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/main.dart.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/version.json
+  Cache-Control: no-cache, no-store, must-revalidate
