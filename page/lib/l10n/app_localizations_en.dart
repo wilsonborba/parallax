@@ -408,4 +408,47 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get footerCopyright => '© 2026 Asodya. All rights reserved.';
+
+  @override
+  String get questSectionTitle => 'Target Hardware: Meta Quest Ecosystem';
+
+  @override
+  String get questSectionSubtitle =>
+      'Engineered for Meta Quest 3, Quest 3S, and Android XR clients with low-latency UDP framing and high frame-rate immersion.';
+
+  @override
+  String get questOptimizedBadge => 'OPTIMIZED FOR META QUEST 3 & QUEST 3S';
+
+  @override
+  String get questCard1Title => 'Meta Quest 3S Wireless Pipeline';
+
+  @override
+  String get questCard1Desc =>
+      'Stream full-resolution Linux X11 desktops over local Wi-Fi 6E with sub-20ms motion-to-photon latency.';
+
+  @override
+  String get questCard2Title => 'Spatial Room-Scale Workspace';
+
+  @override
+  String get questCard2Desc =>
+      'Transform your terminal, IDE, and multi-monitor workflows into floating spatial displays anywhere in your room.';
+
+  @override
+  String get questCard3Title => 'Hardware-Accelerated Decoding';
+
+  @override
+  String get questCard3Desc =>
+      'Snapdragon XR2 Gen 2 native H.264 decode pipeline with zero battery-draining CPU emulation.';
+
+  @override
+  String get questLinkSpecs => 'Meta Quest 3S Specs';
+
+  @override
+  String get questLinkDev => 'Meta Quest Developer Center';
+
+  @override
+  String get questLinkAdb => 'Sideloading & ADB Guide';
+
+  @override
+  String get questLinkSidequest => 'SideQuest Community';
 }

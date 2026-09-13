@@ -408,4 +408,48 @@ class AppLocalizationsTh extends AppLocalizations {
 
   @override
   String get footerCopyright => '© 2026 Asodya สงวนลิขสิทธิ์';
+
+  @override
+  String get questSectionTitle => 'อุปกรณ์เป้าหมาย: ระบบนิเวศ Meta Quest';
+
+  @override
+  String get questSectionSubtitle =>
+      'ออกแบบมาสำหรับ Meta Quest 3, Quest 3S และไคลเอนต์ Android XR พร้อมการสตรีม UDP ความหน่วงต่ำและการแสดงผลภาพเฟรมเรตสูง';
+
+  @override
+  String get questOptimizedBadge =>
+      'ปรับแต่งมาสำหรับ META QUEST 3 และ QUEST 3S';
+
+  @override
+  String get questCard1Title => 'ระบบสตรีมมิ่งไร้สายบน Meta Quest 3S';
+
+  @override
+  String get questCard1Desc =>
+      'สตรีมเดสก์ท็อป Linux แบบเต็มความละเอียดผ่าน Wi-Fi 6E ด้วยความหน่วงต่ำกว่า 20ms';
+
+  @override
+  String get questCard2Title => 'พื้นที่ทำงานเชิงพื้นที่ลอยในห้อง';
+
+  @override
+  String get questCard2Desc =>
+      'เปลี่ยนเทอร์มินัล, IDE และจอแสดงผลหลายจอของคุณให้กลายเป็นหน้าต่างแสดงผลเชิงพื้นที่ลอยได้ในห้องจริง';
+
+  @override
+  String get questCard3Title => 'การถอดรหัสเร่งความเร็วด้วยฮาร์ดแวร์';
+
+  @override
+  String get questCard3Desc =>
+      'ไปป์ไลน์การถอดรหัส H.264 เนทีฟบนชิป Snapdragon XR2 Gen 2 เพื่อประสิทธิภาพสูงสุดและประหยัดพลังงาน';
+
+  @override
+  String get questLinkSpecs => 'ข้อมูลจำเพาะ Meta Quest 3S';
+
+  @override
+  String get questLinkDev => 'ศูนย์นักพัฒนา Meta Quest';
+
+  @override
+  String get questLinkAdb => 'คู่มือการติดตั้งแอป (Sideload / ADB)';
+
+  @override
+  String get questLinkSidequest => 'ชุมชน SideQuest';
 }

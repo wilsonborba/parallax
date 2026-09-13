@@ -118,5 +118,18 @@
   "communityItem3": "Discussions e issues ativas no GitHub",
   "finalCtaHeadline": "Construa o futuro do streaming para VR.",
   "finalCtaSubHeadline": "O Parallax é código aberto e está em constante evolução — junte-se à comunidade.",
-  "footerCopyright": "© 2026 Asodya. Todos os direitos reservados."
+  "footerCopyright": "© 2026 Asodya. Todos os direitos reservados.",
+  "questSectionTitle": "Dispositivos Alvo: Ecossistema Meta Quest",
+  "questSectionSubtitle": "Projetado para Meta Quest 3, Quest 3S e clientes Android XR com streaming UDP de baixa latência e alta taxa de quadros.",
+  "questOptimizedBadge": "OTIMIZADO PARA META QUEST 3 & QUEST 3S",
+  "questCard1Title": "Pipeline Sem Fio no Meta Quest 3S",
+  "questCard1Desc": "Transmita a área de trabalho Linux em resolução máxima via Wi-Fi 6E com latência ultrabaixa.",
+  "questCard2Title": "Espaço de Trabalho Espacial Imersivo",
+  "questCard2Desc": "Transforme seu terminal, IDE e múltiplos monitores em displays espaciais flutuantes no seu ambiente físico.",
+  "questCard3Title": "Decodificação Acelerada por Hardware",
+  "questCard3Desc": "Pipeline nativo de decodificação H.264 no chip Snapdragon XR2 Gen 2 sem emulação de CPU.",
+  "questLinkSpecs": "Especificações Meta Quest 3S",
+  "questLinkDev": "Centro de Desenvolvedores Meta Quest",
+  "questLinkAdb": "Guia de Sideload & ADB",
+  "questLinkSidequest": "Comunidade SideQuest"
 }
