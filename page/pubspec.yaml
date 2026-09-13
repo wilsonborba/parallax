@@ -30,7 +30,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
   google_fonts: ^6.3.0
+  intl: ^0.20.2
+  shared_preferences: ^2.5.3
   url_launcher: ^6.3.2
 
   # The following adds the Cupertino Icons font to your application.
@@ -58,6 +62,7 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+  generate: true
 
   assets:
     - install.sh
