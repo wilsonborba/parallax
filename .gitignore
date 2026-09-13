@@ -57,3 +57,6 @@ local.properties
 # Local deploy scripts
 scripts/
 page/scripts/
+
+# Regenerated at deploy time from install.sh
+page/web/install.sh
